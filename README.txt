@@ -21,3 +21,5 @@ PROCEDURA RAPIDA PER 5.1.7:
 5. Accendi la stampante e attendi il completamento.
 6. Rimuovi la chiavetta USB e riavvia la stampante.
 ========================================================================
+
+Se questo toolkit ti e' stato utile, puoi offrirmi un caffe': https://buymeacoffee.com/tipaldipos1

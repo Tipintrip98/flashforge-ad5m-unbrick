@@ -23,7 +23,7 @@ Questa cartella contiene il **Firmware Personalizzato di Ripristino** generato s
 
 Se questa guida e il firmware personalizzato ti hanno permesso di salvare la stampante evitando una costosa sostituzione della scheda madre, puoi supportare il lavoro con una donazione simbolica:
 
-👉 **[Supporta su Buy Me A Coffee](https://www.buymeacoffee.com/TUO_USERNAME)** ☕
+👉 **[Supporta su Buy Me A Coffee](https://www.buymeacoffee.com/tipaldipos1)** ☕
 
 ---
 
