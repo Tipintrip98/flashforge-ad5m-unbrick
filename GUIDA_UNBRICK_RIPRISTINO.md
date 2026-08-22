@@ -16,6 +16,17 @@ Questa cartella contiene il **Firmware Personalizzato di Ripristino** generato s
 
 ---
 
+
+---
+
+## ☕ Supporta il Progetto (Offrimi un Caffè)
+
+Se questa guida e il firmware personalizzato ti hanno permesso di salvare la stampante evitando una costosa sostituzione della scheda madre, puoi supportare il lavoro con una donazione simbolica:
+
+👉 **[Supporta su Buy Me A Coffee](https://www.buymeacoffee.com/TUO_USERNAME)** ☕
+
+---
+
 ## METODO 1: Ripristino Diretto da USB (Consigliato per Sblocco Immediato con 5.1.7)
 
 ### Requisiti

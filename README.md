@@ -2,6 +2,7 @@
 
 [![Flashforge AD5M](https://img.shields.io/badge/Flashforge-Adventurer%205M%20%2F%205M%20Pro-blue.svg)](https://www.flashforge.com/)
 [![Firmware Version](https://img.shields.io/badge/Firmware-v5.1.7%20%2F%20v3.2.7-green.svg)]()
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-Support%20Project-FFDD00.svg?logo=buy-me-a-coffee&logoColor=black)](https://www.buymeacoffee.com/TUO_USERNAME)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Universal low-level recovery and unbrick solution for Flashforge Adventurer 5M and Adventurer 5M Pro 3D printers that are bricked, stuck on the boot screen/logo, or caught in boot loops after official firmware updates.**
@@ -57,6 +58,25 @@ Through reverse engineering of the system startup logs (`ffstartup-arm.log`, `fi
 ├── README.txt                   # Quick text instructions
 └── README.md                    # English documentation & technical details
 ```
+
+---
+
+
+---
+
+## ☕ Support the Project
+
+If this unbrick toolkit saved your printer from an expensive and unnecessary motherboard replacement, consider supporting this project with a small donation! Your support helps maintain and update recovery tools for the 3D printing community.
+
+<p align="center">
+  <a href="https://www.buymeacoffee.com/TUO_USERNAME">
+    <img src="https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&emoji=☕&slug=TUO_USERNAME&button_colour=FFDD00&font_colour=000000&font_family=Cookie&outline_colour=000000&coffee_colour=ffffff" alt="Buy Me A Coffee" />
+  </a>
+</p>
+
+<p align="center">
+  👉 <a href="https://www.buymeacoffee.com/TUO_USERNAME"><b>Support via Buy Me A Coffee (buymeacoffee.com/TUO_USERNAME)</b></a>
+</p>
 
 ---
 
