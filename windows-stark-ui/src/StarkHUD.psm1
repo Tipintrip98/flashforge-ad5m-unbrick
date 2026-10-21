@@ -1513,7 +1513,7 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
         $synced = Wait-StarkDwmSync -State $s -TimeoutSec 10
     }
     if (-not $synced) {
-        Write-StarkLog 'Il colore delle finestre non si e'' ancora riallineato: lo fara'' al prossimo accesso.' 'warn'
+        Write-StarkLog 'Il colore di bordi e barre del titolo non e'' tornato da solo: se li vedi ancora ciano, riscegli il tuo colore in Impostazioni > Personalizzazione > Colori.' 'warn'
     }
     $fixed = Restore-StarkRegistryValues -State $s -OnlyChanged
     if ($fixed -gt 0) {

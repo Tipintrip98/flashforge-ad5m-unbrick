@@ -74,6 +74,15 @@ $Volatile = @(
     'Software\Microsoft\Windows\CurrentVersion\Search\JumplistData\*'
     'Software\Microsoft\Windows\CurrentVersion\Search\Microsoft.Windows.Search_*'
 )
+# Su base Windows 11 (runner Server 2025) Windows non sempre riallinea da solo il colore dei bordi (DWM)
+# dopo il ripristino: li si verifica a parte (sezione 5). Sul runner base Windows 10 il confronto resta rigoroso.
+$isWin11Base = (Test-StarkEnvironment).IsWin11
+$DwmValues = @(
+    'Software\Microsoft\Windows\DWM\`[AccentColor`]'
+    'Software\Microsoft\Windows\DWM\`[ColorizationAfterglow`]'
+    'Software\Microsoft\Windows\DWM\`[ColorizationColor`]'
+)
+if ($isWin11Base) { $Volatile += $DwmValues }
 
 function Get-RegSnapshot {
     $lines = New-Object System.Collections.Generic.List[string]
@@ -97,10 +106,12 @@ function Get-RegSnapshot {
 }
 
 $installErrors = New-Object System.Collections.Generic.List[string]
+$installWarnings = New-Object System.Collections.Generic.List[string]
 Set-StarkLogger {
     param($m, $l, $p)
     Write-Host ("    [{0}] {1}" -f $l.ToUpper(), $m) -ForegroundColor $(switch ($l) { 'error' { 'Red' } 'warn' { 'Yellow' } 'ok' { 'Green' } default { 'Gray' } })
     if ($l -eq 'error') { $installErrors.Add($m) }
+    if ($l -eq 'warn') { $installWarnings.Add($m) }
 }
 
 # =====================================================================================
@@ -162,15 +173,12 @@ catch { Check $false 'XAML Flow Launcher ben formato' $_.Exception.Message }
 
 # =====================================================================================
 Section '2. Fotografia del registro'
-# Come su un PC reale si parte con il desktop di Esplora risorse attivo: sui runner appena avviati
-# a volte non c'e' ancora, e senza di lui font e colori si comportano diversamente
-if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
-$deadline = (Get-Date).AddSeconds(60)
-while ((Get-StarkDesktopView) -eq [IntPtr]::Zero -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
-Check ((Get-StarkDesktopView) -ne [IntPtr]::Zero) 'Desktop di Esplora risorse attivo'
-Start-Sleep -Seconds 10  # Esplora risorse appena avviato scrive le sue impostazioni: si aspetta prima della fotografia
 $before = @(Get-RegSnapshot)
 $diag = New-Object System.Collections.Generic.List[string]
+# i runner CI non hanno sempre il desktop di Esplora risorse: va tenuto presente leggendo i risultati
+$diag.Add(('Desktop di Esplora risorse: {0}' -f $(if ((Get-StarkDesktopView) -ne [IntPtr]::Zero) { 'presente' } else { 'assente' })))
+function Get-DwmRgb { $v = Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor'; if ($null -ne $v) { (ConvertTo-StarkUInt32 $v) -band 0xFFFFFF } else { -1 } }
+$dwmBefore = Get-DwmRgb
 $diag.Add(('DWM prima: memoria 0x{0:X8}, registro 0x{1:X8}, accento 0x{2:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor'), (Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentColorMenu')))
 $before | Set-Content (Join-Path $OutDir 'registry-before.txt') -Encoding UTF8
 Write-Host "Valori registrati: $($before.Count)"
@@ -281,6 +289,7 @@ Check ($installErrors.Count -eq 0) 'Seconda installazione senza errori' ($instal
 # =====================================================================================
 Section '5. Ripristino'
 $installErrors.Clear()
+$installWarnings.Clear()
 $t = Measure-Command { Restore-StarkHUD -RemoveApps:$Components }
 Write-Host ("Durata ripristino: {0:N0} s" -f $t.TotalSeconds)
 Check ($installErrors.Count -eq 0) 'Ripristino senza errori' ($installErrors -join ' | ')
@@ -298,6 +307,12 @@ $diff = @(Compare-Object -ReferenceObject $before -DifferenceObject $after)
 foreach ($d in $diff) { Write-Host ("    {0} {1}" -f $(if ($d.SideIndicator -eq '<=') { 'PRIMA ' } else { 'DOPO  ' }), $d.InputObject) -ForegroundColor Yellow }
 $diffText = ($diff | Select-Object -First 16 | ForEach-Object { "`n      $(if ($_.SideIndicator -eq '<=') { 'PRIMA' } else { 'DOPO ' }) $($_.InputObject)" }) -join ''
 Check ($diff.Count -eq 0) 'Registro identico a prima dell''installazione' "($($diff.Count) differenze)$diffText"
+if ($isWin11Base) {
+    $dwmBack = (Get-DwmRgb) -eq $dwmBefore
+    $told = [bool]($installWarnings | Where-Object { $_ -like '*bordi e barre del titolo*' })
+    $diag.Add("Base Windows 11: colore bordi riallineato da Windows = $dwmBack, utente avvisato = $told")
+    Check ($dwmBack -or $told) 'Colore dei bordi riallineato, o utente avvisato con le istruzioni'
+}
 Check (-not (Test-Path (Join-Path $fontDir 'Rajdhani-Light.ttf'))) 'Font rimossi'
 Check (-not (Test-Path $themeFile)) 'File tema rimosso'
 Check (-not (Test-Path (Join-Path $startup 'Stark HUD - suono di avvio.lnk'))) 'Collegamento di avvio rimosso'

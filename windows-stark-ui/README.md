@@ -165,7 +165,10 @@ Test:
   - le funzioni pure passano 39 test automatici, anche con Windows PowerShell 5.1;
   - gli script passano PSScriptAnalyzer;
   - i formati di configurazione delle app sono stati controllati sul loro codice sorgente.
-- **Limite:** i runner sono Windows Server, non un Windows 10 Home/Pro con un utente reale. Il primo utilizzo resta consigliato con il punto di ripristino attivo (l'installer lo crea da solo).
+- **Limiti:**
+  - i runner sono Windows Server, non un Windows 10 Home/Pro con un utente reale, e non sempre hanno il desktop di Esplora risorse;
+  - su base Windows 11 il colore di bordi e barre del titolo a volte non torna da solo dopo il ripristino: in quel caso il ripristino lo segnala e dice come sistemarlo ([dettagli](docs/RICERCA.md#5-test-su-windows-reale-errori-trovati-e-corretti));
+  - il primo utilizzo resta consigliato con il punto di ripristino attivo (l'installer lo crea da solo).
 
 ## Crediti e licenze
 
