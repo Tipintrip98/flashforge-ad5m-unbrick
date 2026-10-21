@@ -68,8 +68,10 @@ $Watch = @(
 $Volatile = @(
     'Control Panel\Desktop\`[TranscodedImageCache`]'
     'Control Panel\Desktop\`[TranscodedImageCount`]'
-    'Software\Microsoft\Windows\CurrentVersion\Search\`[InstalledWin32AppsRevision`]'
+    'Software\Microsoft\Windows\CurrentVersion\Search\`[Installed*AppsRevision`]'
+    'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\`[TaskbarStateLastRun`]'
     'Software\Microsoft\Windows\CurrentVersion\Search\JumplistData\*'
+    'Software\Microsoft\Windows\CurrentVersion\Search\Microsoft.Windows.Search_*'
 )
 
 function Get-RegSnapshot {

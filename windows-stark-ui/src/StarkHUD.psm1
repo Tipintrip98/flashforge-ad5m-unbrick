@@ -1154,6 +1154,46 @@ function Install-StarkHUD {
     else { Write-StarkLog 'Installazione completata. Benvenuto a bordo.' 'ok' 100 }
 }
 
+function Restore-StarkRegistryValues {
+    <#
+        Riporta ogni valore salvato al suo stato originale (in ordine inverso).
+        Con -OnlyChanged tocca solo i valori diversi dal backup e restituisce quanti ne ha corretti:
+        serve come verifica finale, perche' Esplora risorse quando si chiude "normalmente"
+        (ad esempio durante una disinstallazione) riscrive impostazioni che teneva in memoria.
+    #>
+    param([Parameter(Mandatory)]$State, [switch]$OnlyChanged)
+    $fixed = 0
+    for ($i = $State.registry.Count - 1; $i -ge 0; $i--) {
+        $e = $State.registry[$i]
+        try {
+            $sub = Get-StarkHkcuSubKey $e.path
+            if ($e.existed) {
+                $type = if ($e.kind -in 'String', 'ExpandString', 'DWord', 'QWord', 'Binary', 'MultiString') { $e.kind } else { 'String' }
+                $raw = if ($e.kind -eq 'Binary') { , [Convert]::FromBase64String($e.value) } else { $e.value }
+                $data = ConvertTo-StarkRegData -Value $raw -Type $type
+                $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($sub)
+                try {
+                    if ($OnlyChanged) {
+                        $cur = $key.GetValue($e.name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                        $same = ($null -ne $cur) -and ((@($cur) -join '|') -ceq (@($data) -join '|'))
+                        if ($same) { continue }
+                    }
+                    $key.SetValue($e.name, $data, [Microsoft.Win32.RegistryValueKind]$e.kind)
+                    $fixed++
+                } finally { $key.Close() }
+            } else {
+                $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($sub, $true)
+                if ($key) {
+                    try {
+                        if ($key.GetValueNames() -contains $e.name) { $key.DeleteValue($e.name, $false); $fixed++ }
+                    } finally { $key.Close() }
+                }
+            }
+        } catch { Write-StarkLog "Registro: $($e.path)\$($e.name) non ripristinato ($($_.Exception.Message))" 'warn' }
+    }
+    $fixed
+}
+
 function Restore-StarkHUD {
     <# Riporta Windows esattamente com'era prima di Stark HUD. #>
     [CmdletBinding()]
@@ -1193,24 +1233,7 @@ function Restore-StarkHUD {
 
     # 3) registro: valori originali in ordine inverso, poi rimozione delle chiavi create
     Write-StarkLog 'Ripristino dei valori di registro originali...' 'info' 45
-    for ($i = $s.registry.Count - 1; $i -ge 0; $i--) {
-        $e = $s.registry[$i]
-        try {
-            $sub = Get-StarkHkcuSubKey $e.path
-            if ($e.existed) {
-                $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($sub)
-                try {
-                    $kind = [Microsoft.Win32.RegistryValueKind]$e.kind
-                    $raw = if ($e.kind -eq 'Binary') { , [Convert]::FromBase64String($e.value) } else { $e.value }
-                    $data = ConvertTo-StarkRegData -Value $raw -Type $(if ($e.kind -in 'String', 'ExpandString', 'DWord', 'QWord', 'Binary', 'MultiString') { $e.kind } else { 'String' })
-                    $key.SetValue($e.name, $data, $kind)
-                } finally { $key.Close() }
-            } else {
-                $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($sub, $true)
-                if ($key) { try { $key.DeleteValue($e.name, $false) } finally { $key.Close() } }
-            }
-        } catch { Write-StarkLog "Registro: $($e.path)\$($e.name) non ripristinato ($($_.Exception.Message))" 'warn' }
-    }
+    [void](Restore-StarkRegistryValues -State $s)
     for ($i = $s.keysCreated.Count - 1; $i -ge 0; $i--) {
         try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree((Get-StarkHkcuSubKey $s.keysCreated[$i]), $false) } catch { }
     }
@@ -1286,6 +1309,16 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
     }
 
     Restart-StarkExplorer
+
+    # 8) verifica finale: Esplora risorse puo' aver riscritto valori che aveva in memoria
+    Start-Sleep -Seconds 3
+    $fixed = Restore-StarkRegistryValues -State $s -OnlyChanged
+    if ($fixed -gt 0) {
+        Write-StarkLog "Verifica finale: $fixed impostazioni riscritte da Windows sono state riportate all'originale." 'info'
+        Restart-StarkExplorer
+        Send-StarkSettingChange
+    }
+
     # Rainmeter era gia' presente prima di Stark HUD: riavvialo con il suo layout originale
     $rm = Find-StarkExe @('%ProgramFiles%\Rainmeter\Rainmeter.exe', '%ProgramFiles(x86)%\Rainmeter\Rainmeter.exe')
     if ($rm -and -not $RemoveApps -and -not ($s.apps -contains 'Rainmeter.Rainmeter')) { Start-Process -FilePath $rm }

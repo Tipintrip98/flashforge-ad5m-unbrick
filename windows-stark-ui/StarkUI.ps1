@@ -128,16 +128,17 @@ function Add-Toggle($Panel, [string]$Key, [string]$Title, [string]$Desc, [bool]$
     $grid.ColumnDefinitions.Add($c1); $grid.ColumnDefinitions.Add($c2)
 
     $stack = New-Object System.Windows.Controls.StackPanel
-    $title = New-TextBlock '' 'RowTitle'
-    [void]$title.Inlines.Add((New-Object System.Windows.Documents.Run $Title))
+    # attenzione: in PowerShell $title e $Title sono la stessa variabile
+    $titleBlock = New-TextBlock '' 'RowTitle'
+    [void]$titleBlock.Inlines.Add((New-Object System.Windows.Documents.Run $Title))
     if ($Badge) {
         $run = New-Object System.Windows.Documents.Run ("   " + $Badge.ToUpper())
         $run.Foreground = $bc.ConvertFromString('#F2B544')
         $run.FontSize = 10.5
         $run.FontFamily = $window.Resources['Mono']
-        [void]$title.Inlines.Add($run)
+        [void]$titleBlock.Inlines.Add($run)
     }
-    [void]$stack.Children.Add($title)
+    [void]$stack.Children.Add($titleBlock)
     [void]$stack.Children.Add((New-TextBlock $Desc 'RowDesc'))
 
     $cb = New-Object System.Windows.Controls.CheckBox
