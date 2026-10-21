@@ -346,6 +346,69 @@ function Get-StarkDwmColor {
     if ([StarkHUD.Native]::DwmGetColorizationColor([ref]$c, [ref]$opaque) -eq 0) { $c } else { $null }
 }
 
+function Get-StarkFileLocker {
+    <# Processi che tengono aperto un file, chiesti al Gestione riavvio di Windows (solo lettura). #>
+    param([Parameter(Mandatory)][string]$Path)
+    try {
+        if (-not ('StarkHUD.FileLock' -as [type])) {
+            Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+namespace StarkHUD {
+public static class FileLock {
+    [StructLayout(LayoutKind.Sequential)]
+    struct RM_UNIQUE_PROCESS { public int dwProcessId; public System.Runtime.InteropServices.ComTypes.FILETIME ProcessStartTime; }
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    struct RM_PROCESS_INFO {
+        public RM_UNIQUE_PROCESS Process;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 256)] public string strAppName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 64)] public string strServiceShortName;
+        public int ApplicationType;
+        public uint AppStatus;
+        public uint TSSessionId;
+        [MarshalAs(UnmanagedType.Bool)] public bool bRestartable;
+    }
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmStartSession(out uint pSessionHandle, int dwSessionFlags, StringBuilder strSessionKey);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmEndSession(uint pSessionHandle);
+    [DllImport("rstrtmgr.dll", CharSet = CharSet.Unicode)]
+    static extern int RmRegisterResources(uint pSessionHandle, uint nFiles, string[] rgsFilenames, uint nApplications, IntPtr rgApplications, uint nServices, string[] rgsServiceNames);
+    [DllImport("rstrtmgr.dll")]
+    static extern int RmGetList(uint dwSessionHandle, out uint pnProcInfoNeeded, ref uint pnProcInfo, [In, Out] RM_PROCESS_INFO[] rgAffectedApps, ref uint lpdwRebootReasons);
+    public static string[] Lockers(string path) {
+        List<string> result = new List<string>();
+        uint handle;
+        if (RmStartSession(out handle, 0, new StringBuilder(64)) != 0) { return result.ToArray(); }
+        try {
+            if (RmRegisterResources(handle, 1, new string[] { path }, 0, IntPtr.Zero, 0, null) != 0) { return result.ToArray(); }
+            uint needed = 0, count = 0, reasons = 0;
+            RM_PROCESS_INFO[] info = null;
+            int rc = 234;
+            for (int attempt = 0; rc == 234 && attempt < 3; attempt++) {
+                info = needed > 0 ? new RM_PROCESS_INFO[needed] : null;
+                count = needed;
+                rc = RmGetList(handle, out needed, ref count, info, ref reasons);
+            }
+            if (rc == 0 && info != null) {
+                for (int i = 0; i < count; i++) {
+                    string svc = info[i].strServiceShortName;
+                    result.Add(info[i].strAppName + " (pid " + info[i].Process.dwProcessId + (String.IsNullOrEmpty(svc) ? "" : ", servizio " + svc) + ")");
+                }
+            }
+        } finally { RmEndSession(handle); }
+        return result.ToArray();
+    }
+}
+}
+'@
+        }
+        @([StarkHUD.FileLock]::Lockers($Path))
+    } catch { @() }
+}
+
 function Get-StarkDesktopView {
     <# Finestra che contiene le icone del desktop (sotto Progman o sotto un WorkerW). #>
     Initialize-StarkNative
@@ -814,6 +877,13 @@ function Install-StarkTheme {
     $wall = Join-Path $AssetRoot ('wallpapers\' + (Select-StarkWallpaper -Width $display.Width -Height $display.Height))
     Save-StarkPreviousWallpaper
 
+    # Il colore di bordi e barre del titolo appartiene a DWM (il compositore grafico): non lo tocchiamo.
+    # Windows sorveglia la chiave Accent e lo riallinea da solo (verificato sui runner Windows):
+    # ne salviamo i valori solo per controllare il ripristino. Il salvataggio va fatto prima di
+    # cambiare l'accento: Windows riallinea DWM in pochi istanti e il backup leggerebbe gia' il ciano.
+    $dwm = 'HKCU:\Software\Microsoft\Windows\DWM'
+    foreach ($n in 'AccentColor', 'ColorizationColor', 'ColorizationAfterglow') { Backup-StarkRegValue -Path $dwm -Name $n -ObserveOnly }
+
     # Modalita' scura + trasparenze (valori salvati per il ripristino)
     $pers = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
     Set-StarkRegValue -Path $pers -Name 'AppsUseLightTheme' -Value 0 -Type DWord
@@ -827,11 +897,6 @@ function Install-StarkTheme {
     Set-StarkRegValue -Path $accent -Name 'AccentPalette' -Value (Get-StarkAccentPalette -Hex $script:AccentHex) -Type Binary
     Set-StarkRegValue -Path $accent -Name 'AccentColorMenu' -Value (Get-StarkAbgr -Hex $script:AccentHex) -Type DWord
     Set-StarkRegValue -Path $accent -Name 'StartColorMenu' -Value (Get-StarkAbgr -Hex '#00546F') -Type DWord
-    # Il colore di bordi e barre del titolo appartiene a DWM (il compositore grafico): non lo tocchiamo.
-    # Windows sorveglia la chiave Accent e lo riallinea da solo (verificato sui runner Windows):
-    # ne salviamo i valori solo per controllare il ripristino.
-    $dwm = 'HKCU:\Software\Microsoft\Windows\DWM'
-    foreach ($n in 'AccentColor', 'ColorizationColor', 'ColorizationAfterglow') { Backup-StarkRegValue -Path $dwm -Name $n -ObserveOnly }
     Set-StarkRegValue -Path $dwm -Name 'ColorPrevalence' -Value 0 -Type DWord
 
     # File .theme "Stark HUD": compare in Impostazioni > Temi per riselezionarlo in futuro.
@@ -1339,14 +1404,18 @@ function Restore-StarkHUD {
 
     # 5) file: ripristina le copie, elimina quelli creati da Stark HUD
     Write-StarkLog 'Ripristino dei file...' 'info' 60
+    # la cache dei font di Windows puo' tenere aperto un file per qualche secondo: 10 s in tutto, non per font
+    $fontDeadline = (Get-Date).AddSeconds(10)
     for ($i = $s.files.Count - 1; $i -ge 0; $i--) {
         $f = $s.files[$i]
         try {
-            if ((Test-Path -LiteralPath $f.target) -and $f.target.StartsWith($fontDir, [StringComparison]::OrdinalIgnoreCase)) {
-                # la cache dei font di Windows puo' tenere aperto il file per qualche secondo
-                for ($n = 0; $n -lt 10 -and (Test-Path -LiteralPath $f.target); $n++) {
+            if ($f.target.StartsWith($fontDir, [StringComparison]::OrdinalIgnoreCase)) {
+                while (Test-Path -LiteralPath $f.target) {
                     try { Remove-Item -LiteralPath $f.target -Force -ErrorAction Stop }
-                    catch { [void][StarkHUD.Native]::RemoveFontResource($f.target); Send-StarkFontChange; Start-Sleep -Seconds 1 }
+                    catch {
+                        if ((Get-Date) -ge $fontDeadline) { break }
+                        [void][StarkHUD.Native]::RemoveFontResource($f.target); Send-StarkFontChange; Start-Sleep -Seconds 1
+                    }
                 }
             }
             if (Test-Path -LiteralPath $f.target) { Remove-Item -LiteralPath $f.target -Recurse -Force -ErrorAction Stop }
@@ -1358,7 +1427,10 @@ function Restore-StarkHUD {
                 # font ancora aperto da un'app: verra' eliminato al prossimo accesso
                 $runOnce = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\RunOnce')
                 try { $runOnce.SetValue('StarkHUD-' + [IO.Path]::GetFileNameWithoutExtension($f.target), ('cmd.exe /c del /f /q "{0}"' -f $f.target)) } finally { $runOnce.Close() }
-                Write-StarkLog "Font $([IO.Path]::GetFileName($f.target)) in uso: verra' eliminato al prossimo accesso." 'info'
+                $why = $_.Exception.Message
+                $who = @(Get-StarkFileLocker -Path $f.target)
+                if ($who.Count) { $why = 'aperto da ' + ($who -join ', ') }
+                Write-StarkLog "Font $([IO.Path]::GetFileName($f.target)) in uso ($why): verra' eliminato al prossimo accesso." 'info'
             } else {
                 Write-StarkLog "File $($f.target) non ripristinato: $($_.Exception.Message)" 'warn'
             }
@@ -1417,11 +1489,14 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
     # 9) si aspetta che Windows abbia riallineato il colore delle finestre (DWM),
     #    poi si verifica che ogni valore salvato sia tornato com'era
     Write-StarkLog 'Attendo che Windows riallinei il colore delle finestre...' 'info' 90
-    if (-not (Wait-StarkDwmSync -State $s -TimeoutSec 20)) {
+    $synced = Wait-StarkDwmSync -State $s -TimeoutSec 15
+    # Esplora risorse appena riavviato puo' perdere l'avviso: lo si ripete finche' DWM non torna com'era
+    for ($n = 0; -not $synced -and $n -lt 3; $n++) {
         Send-StarkSettingChange 'ImmersiveColorSet'
-        if (-not (Wait-StarkDwmSync -State $s -TimeoutSec 30)) {
-            Write-StarkLog 'Il colore delle finestre non si e'' ancora riallineato: lo fara'' al prossimo accesso.' 'warn'
-        }
+        $synced = Wait-StarkDwmSync -State $s -TimeoutSec 10
+    }
+    if (-not $synced) {
+        Write-StarkLog 'Il colore delle finestre non si e'' ancora riallineato: lo fara'' al prossimo accesso.' 'warn'
     }
     $fixed = Restore-StarkRegistryValues -State $s -OnlyChanged
     if ($fixed -gt 0) {

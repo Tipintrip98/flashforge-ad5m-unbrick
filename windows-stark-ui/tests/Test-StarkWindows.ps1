@@ -69,6 +69,7 @@ $Volatile = @(
     'Control Panel\Desktop\`[TranscodedImageCache`]'
     'Control Panel\Desktop\`[TranscodedImageCount`]'
     'Software\Microsoft\Windows\CurrentVersion\Search\`[Installed*AppsRevision`]'
+    'Software\Microsoft\Windows\CurrentVersion\Search\`[NamespaceSettingsRevision`]'
     'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced\`[TaskbarStateLastRun`]'
     'Software\Microsoft\Windows\CurrentVersion\Search\JumplistData\*'
     'Software\Microsoft\Windows\CurrentVersion\Search\Microsoft.Windows.Search_*'
