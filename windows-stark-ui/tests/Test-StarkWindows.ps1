@@ -198,6 +198,7 @@ Check ((Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Themes\Personali
 $pal = Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentPalette'
 Check ($pal -is [byte[]] -and $pal.Length -eq 32) 'Tavolozza accento 32 byte'
 Check ((Get-RegValue 'Software\Microsoft\Windows\DWM' 'AccentColor') -eq -3697152) 'AccentColor ABGR ciano'
+Write-Host ('    DWM in memoria dopo l''installazione: 0x{0:X8}' -f (Get-StarkDwmColor))
 $themeFile = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Themes\StarkHUD.theme'
 Check (Test-Path $themeFile) 'File StarkHUD.theme creato'
 if (Test-Path $themeFile) {
@@ -273,6 +274,8 @@ $installErrors.Clear()
 $t = Measure-Command { Restore-StarkHUD -RemoveApps:$Components }
 Write-Host ("Durata ripristino: {0:N0} s" -f $t.TotalSeconds)
 Check ($installErrors.Count -eq 0) 'Ripristino senza errori' ($installErrors -join ' | ')
+Write-Host ('    DWM in memoria dopo il ripristino: 0x{0:X8}' -f (Get-StarkDwmColor))
+Start-Sleep -Seconds 5  # lascia a DWM ed Esplora risorse il tempo di salvare il loro stato
 $after = @(Get-RegSnapshot)
 $after | Set-Content (Join-Path $OutDir 'registry-after.txt') -Encoding UTF8
 $diff = @(Compare-Object -ReferenceObject $before -DifferenceObject $after)

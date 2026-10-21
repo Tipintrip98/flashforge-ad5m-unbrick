@@ -322,7 +322,86 @@ public static extern IntPtr GetDC(IntPtr hWnd);
 public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
 [DllImport("gdi32.dll")]
 public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
+[StructLayout(LayoutKind.Sequential)]
+public struct DwmColorParams { public uint Color; public uint Afterglow; public uint ColorBalance; public uint AfterglowBalance; public uint BlurBalance; public uint GlassReflectionIntensity; public uint OpaqueBlend; }
+[DllImport("dwmapi.dll", EntryPoint = "#127")]
+public static extern int DwmGetColorizationParameters(out DwmColorParams p);
+[DllImport("dwmapi.dll", EntryPoint = "#131")]
+public static extern int DwmSetColorizationParameters(ref DwmColorParams p, uint unknown);
+[DllImport("dwmapi.dll")]
+public static extern int DwmGetColorizationColor(out uint color, out bool opaque);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
+[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+public static extern IntPtr FindWindowEx(IntPtr hParent, IntPtr hAfter, string lpClassName, string lpWindowName);
+[DllImport("user32.dll")]
+public static extern bool IsWindowVisible(IntPtr hWnd);
+[DllImport("user32.dll")]
+public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
 '@
+}
+
+function ConvertTo-StarkUInt32 {
+    param([Parameter(Mandatory)]$Value)
+    [BitConverter]::ToUInt32([BitConverter]::GetBytes([int32]$Value), 0)
+}
+
+function Set-StarkDwmColor {
+    <#
+        Colore di bordi e barre del titolo. DWM lo tiene in memoria e lo riscrive nel registro:
+        va impostato tramite le sue API (come fa Impostazioni), non solo nel registro.
+    #>
+    param([Parameter(Mandatory)][uint32]$Color, [uint32]$Afterglow = $Color)
+    Initialize-StarkNative
+    try {
+        $p = New-Object 'StarkHUD.Native+DwmColorParams'
+        if ([StarkHUD.Native]::DwmGetColorizationParameters([ref]$p) -ne 0) { return $false }
+        $p.Color = $Color
+        $p.Afterglow = $Afterglow
+        [StarkHUD.Native]::DwmSetColorizationParameters([ref]$p, 0) -eq 0
+    } catch { $false }
+}
+
+function Get-StarkDwmColor {
+    Initialize-StarkNative
+    $c = [uint32]0; $opaque = $false
+    if ([StarkHUD.Native]::DwmGetColorizationColor([ref]$c, [ref]$opaque) -eq 0) { $c } else { $null }
+}
+
+function Get-StarkDesktopView {
+    <# Finestra che contiene le icone del desktop (sotto Progman o sotto un WorkerW). #>
+    Initialize-StarkNative
+    $view = [StarkHUD.Native]::FindWindowEx([StarkHUD.Native]::FindWindow('Progman', $null), [IntPtr]::Zero, 'SHELLDLL_DefView', $null)
+    $worker = [IntPtr]::Zero
+    while ($view -eq [IntPtr]::Zero) {
+        $worker = [StarkHUD.Native]::FindWindowEx([IntPtr]::Zero, $worker, 'WorkerW', $null)
+        if ($worker -eq [IntPtr]::Zero) { break }
+        $view = [StarkHUD.Native]::FindWindowEx($worker, [IntPtr]::Zero, 'SHELLDLL_DefView', $null)
+    }
+    $view
+}
+
+function Get-StarkDesktopIconsVisible {
+    $view = Get-StarkDesktopView
+    if ($view -eq [IntPtr]::Zero) { return $null }
+    $list = [StarkHUD.Native]::FindWindowEx($view, [IntPtr]::Zero, 'SysListView32', 'FolderView')
+    if ($list -eq [IntPtr]::Zero) { return $null }
+    [StarkHUD.Native]::IsWindowVisible($list)
+}
+
+function Set-StarkDesktopIcons {
+    <#
+        Mostra/nasconde le icone come il comando "Visualizza > Mostra icone del desktop".
+        Esplora risorse salva questo stato per conto suo: scrivere solo HideIcons nel registro non basta.
+    #>
+    param([Parameter(Mandatory)][bool]$Visible)
+    $current = Get-StarkDesktopIconsVisible
+    if ($null -eq $current) { return $false }
+    if ($current -ne $Visible) {
+        [void][StarkHUD.Native]::SendMessage((Get-StarkDesktopView), 0x0111, [IntPtr]0x7402, [IntPtr]::Zero)  # WM_COMMAND
+        Start-Sleep -Milliseconds 500
+    }
+    $true
 }
 
 function Send-StarkSettingChange {
@@ -771,6 +850,7 @@ function Install-StarkTheme {
     Set-StarkRegValue -Path $dwm -Name 'ColorizationColor' -Value (Get-StarkArgb -Hex $script:AccentHex) -Type DWord
     Set-StarkRegValue -Path $dwm -Name 'ColorizationAfterglow' -Value (Get-StarkArgb -Hex $script:AccentHex) -Type DWord
     Set-StarkRegValue -Path $dwm -Name 'ColorPrevalence' -Value 0 -Type DWord
+    [void](Set-StarkDwmColor -Color (Get-StarkArgb -Hex $script:AccentHex))
 
     # File .theme "Stark HUD": compare in Impostazioni > Temi per riselezionarlo in futuro.
     # Non viene applicato con un doppio clic simulato: Windows lo applicherebbe in modo asincrono,
@@ -1069,6 +1149,12 @@ function Invoke-StarkTweaks {
                     & powercfg.exe /setactive $t.scheme 2>$null
                     if ($LASTEXITCODE -ne 0) { throw 'piano non disponibile su questo PC (comune sui portatili Modern Standby)' }
                 }
+                'desktop-icons' {
+                    $visible = Get-StarkDesktopIconsVisible
+                    if ($null -eq $visible) { throw 'desktop non trovato (Esplora risorse non e'' in esecuzione)' }
+                    Set-StarkExtra 'desktopIconsVisible' $visible -IfMissing
+                    [void](Set-StarkDesktopIcons -Visible (-not [bool]$t.hide))
+                }
                 'cleanup' {
                     $limit = (Get-Date).AddDays(-[int]$t.olderThanDays)
                     $files = Get-ChildItem -LiteralPath $env:TEMP -Recurse -Force -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -lt $limit }
@@ -1310,7 +1396,20 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
 
     Restart-StarkExplorer
 
-    # 8) verifica finale: Esplora risorse puo' aver riscritto valori che aveva in memoria
+    # 8) stato tenuto in memoria da DWM ed Esplora risorse: si ripristina con le loro API
+    $dwmColor = $s.registry | Where-Object { $_.path -eq 'HKCU:\Software\Microsoft\Windows\DWM' -and $_.name -eq 'ColorizationColor' } | Select-Object -First 1
+    $dwmGlow = $s.registry | Where-Object { $_.path -eq 'HKCU:\Software\Microsoft\Windows\DWM' -and $_.name -eq 'ColorizationAfterglow' } | Select-Object -First 1
+    if ($dwmColor -and $dwmColor.existed) {
+        $glow = if ($dwmGlow -and $dwmGlow.existed) { ConvertTo-StarkUInt32 $dwmGlow.value } else { ConvertTo-StarkUInt32 $dwmColor.value }
+        [void](Set-StarkDwmColor -Color (ConvertTo-StarkUInt32 $dwmColor.value) -Afterglow $glow)
+    }
+    $icons = Get-StarkExtra 'desktopIconsVisible'
+    if ($null -ne $icons) {
+        Start-Sleep -Seconds 2  # il desktop di Esplora risorse appena riavviato deve essere pronto
+        [void](Set-StarkDesktopIcons -Visible ([bool]$icons))
+    }
+
+    # 9) verifica finale: Esplora risorse puo' aver riscritto valori che aveva in memoria
     Start-Sleep -Seconds 3
     $fixed = Restore-StarkRegistryValues -State $s -OnlyChanged
     if ($fixed -gt 0) {

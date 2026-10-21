@@ -162,9 +162,8 @@
       "title": "Desktop pulito (nascondi icone)",
       "desc": "Look minimale stile Apple TV: le icone del desktop vengono nascoste (non cancellate).",
       "default": false,
-      "registry": [
-        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "HideIcons", "type": "DWord", "value": 1 }
-      ]
+      "type": "desktop-icons",
+      "hide": true
     },
     {
       "id": "accent-titlebars",
