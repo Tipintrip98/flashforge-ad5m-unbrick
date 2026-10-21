@@ -1124,7 +1124,11 @@ function Restore-StarkHUD {
     # 1) componenti in esecuzione
     $tbx = Get-StarkExtra 'taskbarxDir'
     if ($tbx -and (Test-Path -LiteralPath (Join-Path $tbx 'TaskbarX.exe'))) {
-        Start-Process -FilePath (Join-Path $tbx 'TaskbarX.exe') -ArgumentList '-stop' -Wait -ErrorAction SilentlyContinue
+        try {
+            $stop = Start-Process -FilePath (Join-Path $tbx 'TaskbarX.exe') -ArgumentList '-stop' -PassThru -ErrorAction Stop
+            if (-not $stop.WaitForExit(15000)) { $stop | Stop-Process -Force -ErrorAction SilentlyContinue }
+        } catch { }
+        Get-Process TaskbarX -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
     }
     foreach ($p in 'Rainmeter', 'Flow.Launcher') { Get-Process $p -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }
     $lively = Find-StarkExe @('%ProgramFiles%\Lively Wallpaper\Lively.exe', '%LOCALAPPDATA%\Programs\Lively Wallpaper\Lively.exe')
@@ -1132,9 +1136,23 @@ function Restore-StarkHUD {
     Start-Sleep -Seconds 1
 
     # 2) tema precedente (sfondo, colori, cursori, suoni) applicato in modo nativo
+    #    Si riapplica il file nel suo percorso originale, cosi' Windows non punta alla cartella di backup.
+    #    Un tema utente (es. Custom.theme) puo' essere stato riscritto da Windows: torna prima la copia salvata.
     $prevTheme = Get-StarkExtra 'previousTheme'
+    $prevOriginal = Get-StarkExtra 'previousThemeOriginalPath'
+    $userThemes = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Themes'
     $fallback = Join-Path $env:SystemRoot 'Resources\Themes\aero.theme'
-    $themeToApply = if ($prevTheme -and (Test-Path -LiteralPath $prevTheme)) { $prevTheme } elseif (Test-Path $fallback) { $fallback } else { $null }
+    $themeToApply = $null
+    if ($prevOriginal -and $prevTheme -and (Test-Path -LiteralPath $prevTheme)) {
+        if ($prevOriginal.StartsWith($userThemes, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $prevOriginal)) {
+            try {
+                New-Item -ItemType Directory -Path (Split-Path $prevOriginal) -Force | Out-Null
+                Copy-Item -LiteralPath $prevTheme -Destination $prevOriginal -Force
+            } catch { }
+        }
+        if (Test-Path -LiteralPath $prevOriginal) { $themeToApply = $prevOriginal }
+    }
+    if (-not $themeToApply -and (Test-Path -LiteralPath $fallback)) { $themeToApply = $fallback }
     if ($themeToApply) {
         Write-StarkLog 'Riapplico il tema precedente...' 'info' 20
         Invoke-StarkThemeFile -Path $themeToApply
@@ -1186,8 +1204,14 @@ function Restore-StarkHUD {
     }
 
     # 6) sfondo, schermata di blocco, piano energetico, menu contestuale
+    $wpEntry = $s.registry | Where-Object { $_.path -eq 'HKCU:\Control Panel\Desktop' -and $_.name -eq 'Wallpaper' } | Select-Object -First 1
+    $wpOriginal = if ($wpEntry -and $wpEntry.existed) { [Environment]::ExpandEnvironmentVariables([string]$wpEntry.value) } else { $null }
     $wp = Get-StarkExtra 'previousWallpaper'
-    if ($wp -and (Test-Path -LiteralPath $wp)) {
+    if ($wpEntry -and $wpEntry.existed -and -not $wpOriginal) {
+        [void][StarkHUD.Native]::SystemParametersInfo(0x0014, 0, '', 0x03)  # prima non c'era sfondo (tinta unita)
+    } elseif ($wpOriginal -and (Test-Path -LiteralPath $wpOriginal)) {
+        [void][StarkHUD.Native]::SystemParametersInfo(0x0014, 0, $wpOriginal, 0x03)
+    } elseif ($wp -and (Test-Path -LiteralPath $wp)) {
         $keep = Join-Path $env:APPDATA 'Microsoft\Windows\Themes\StarkHUD-previous-wallpaper.jpg'
         Copy-Item -LiteralPath $wp -Destination $keep -Force
         [void][StarkHUD.Native]::SystemParametersInfo(0x0014, 0, $keep, 0x03)

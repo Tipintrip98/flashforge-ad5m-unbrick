@@ -18,7 +18,10 @@ param(
     [switch]$RemoveApps,
     [ValidateSet('Default', 'Minimal', 'Full')][string]$Preset = 'Default',
     [string]$City = '',
-    [switch]$Yes
+    [switch]$Yes,
+    # Modalita' test: apre la finestra, salva uno screenshot per scheda e si chiude da sola
+    [switch]$SmokeTest,
+    [string]$Screenshot = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -46,11 +49,13 @@ $Root = $PSScriptRoot
 # Errori imprevisti: messaggio chiaro invece di una finestra che sparisce
 trap {
     $msg = "Errore: $($_.Exception.Message)`n`nPuoi sempre ripristinare con Ripristina.cmd."
-    if ($Install -or $Restore) { Write-Host $msg -ForegroundColor Red }
-    else {
-        Add-Type -AssemblyName PresentationFramework
-        [void][System.Windows.MessageBox]::Show($msg, 'Stark HUD', 'OK', 'Error')
+    if ($Install -or $Restore -or $SmokeTest) {
+        Write-Host $msg -ForegroundColor Red
+        Write-Host $_.ScriptStackTrace
+        exit 1
     }
+    Add-Type -AssemblyName PresentationFramework
+    [void][System.Windows.MessageBox]::Show($msg, 'Stark HUD', 'OK', 'Error')
     break
 }
 
@@ -364,4 +369,40 @@ $window.Add_Closing({
     })
 
 Add-LogLine "Stark HUD pronto. Cartella del pack: $Root" 'info'
+
+if ($SmokeTest) {
+    # Verifica la mappatura opzioni -> interruttori, poi fotografa ogni scheda e chiude
+    $opts = Get-SelectedOptions
+    Write-Output ('SMOKE opzioni: ' + (($opts.Keys | Sort-Object) -join ', '))
+    Write-Output ('SMOKE ottimizzazioni selezionate: ' + ($opts.Tweaks -join ', '))
+    $script:Shots = @('TabTheme', 'TabComponents', 'TabTweaks')
+    $script:ShotIndex = 0
+    $shotTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $shotTimer.Interval = [TimeSpan]::FromMilliseconds(1500)
+    $shotTimer.Add_Tick({
+            try {
+                $content = $window.Content
+                $rtb = New-Object System.Windows.Media.Imaging.RenderTargetBitmap([int]$content.ActualWidth, [int]$content.ActualHeight, 96, 96, [System.Windows.Media.PixelFormats]::Pbgra32)
+                $rtb.Render($content)
+                if ($Screenshot) {
+                    $enc = New-Object System.Windows.Media.Imaging.PngBitmapEncoder
+                    $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($rtb))
+                    $file = $Screenshot -replace '\.png$', ('-{0}.png' -f $script:Shots[$script:ShotIndex])
+                    $fs = [IO.File]::Create($file)
+                    try { $enc.Save($fs) } finally { $fs.Close() }
+                    Write-Host "SMOKE screenshot: $file"
+                }
+                $script:ShotIndex++
+                if ($script:ShotIndex -ge $script:Shots.Count) { $shotTimer.Stop(); $window.Close() }
+                else { $ui[$script:Shots[$script:ShotIndex]].IsChecked = $true }
+            } catch {
+                Write-Host "SMOKE errore: $($_.Exception.Message)"
+                $shotTimer.Stop(); $window.Close()
+                $script:SmokeFailed = $true
+            }
+        })
+    $shotTimer.Start()
+}
+
 [void]$window.ShowDialog()
+if ($SmokeTest -and $script:SmokeFailed) { exit 1 }

@@ -1,0 +1,58 @@
+# Stark HUD - test su Windows reale (runner GitHub usa e getta)
+# Installa il pack, lo verifica con le API di Windows, lo ripristina e confronta il registro.
+name: Stark HUD - test Windows
+
+on:
+  push:
+    paths:
+      - 'windows-stark-ui/**'
+      - '.github/workflows/stark-hud-windows.yml'
+  workflow_dispatch:
+
+jobs:
+  windows:
+    name: ${{ matrix.os }} (${{ matrix.mode }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            mode: nativo
+          - os: windows-2025
+            mode: componenti
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: powershell
+        working-directory: windows-stark-ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Test unitari (Windows PowerShell 5.1)
+        run: .\tests\Test-StarkCore.ps1
+
+      - name: Ambiente
+        run: |
+          [Environment]::OSVersion.VersionString
+          $PSVersionTable.PSVersion.ToString()
+          Get-Command winget.exe -ErrorAction SilentlyContinue | Select-Object Source
+          Get-Process explorer -ErrorAction SilentlyContinue | Select-Object Id, SessionId
+
+      - name: Installazione, verifica e ripristino
+        env:
+          STARK_PRINT_SCREENSHOTS: '1'
+        run: |
+          $components = '${{ matrix.mode }}' -eq 'componenti'
+          & .\tests\Test-StarkWindows.ps1 -Components:$components
+          exit $LASTEXITCODE
+
+      - name: Log e screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stark-hud-${{ matrix.os }}
+          path: |
+            windows-stark-ui/tests/out/
+            ~/AppData/Local/StarkHUD/logs/
+          if-no-files-found: ignore

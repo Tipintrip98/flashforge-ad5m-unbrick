@@ -1,0 +1,319 @@
+﻿<#
+    Stark HUD - test d'integrazione su Windows reale.
+
+    ATTENZIONE: installa davvero il pack e poi lo ripristina.
+    Da eseguire solo su una macchina usa e getta (VM, Windows Sandbox, runner CI).
+
+    Fasi:
+      1. validazione degli asset con le API di Windows (cursori, suoni, font, XAML, JSON)
+      2. fotografia del registro utente
+      3. installazione + verifica di ogni modifica
+      4. seconda installazione (idempotenza del backup)
+      5. ripristino + confronto del registro con la fotografia iniziale
+      6. avvio dell'interfaccia grafica in modalita' test con screenshot
+
+    Uso:  powershell -ExecutionPolicy Bypass -STA -File tests\Test-StarkWindows.ps1 [-Components]
+#>
+param(
+    [switch]$Components,
+    [string]$OutDir = (Join-Path $PSScriptRoot 'out')
+)
+$ErrorActionPreference = 'Stop'
+$root = Split-Path -Parent $PSScriptRoot
+New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+Import-Module (Join-Path $root 'src\StarkHUD.psm1') -Force
+
+$script:pass = 0
+$script:fail = 0
+$script:failures = New-Object System.Collections.Generic.List[string]
+function Check([bool]$Condition, [string]$Name, [string]$Detail = '') {
+    if ($Condition) { $script:pass++; Write-Host "  ok   $Name" -ForegroundColor Green }
+    else {
+        $script:fail++
+        $script:failures.Add("$Name $Detail")
+        Write-Host "  FAIL $Name $Detail" -ForegroundColor Red
+        if ($env:GITHUB_ACTIONS) { Write-Host "::error title=Stark HUD::$Name $Detail" }
+    }
+}
+function Section([string]$Title) { Write-Host ''; Write-Host "=== $Title ===" -ForegroundColor Cyan }
+
+function Get-RegValue([string]$Sub, [string]$Name) {
+    $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($Sub)
+    if (-not $k) { return $null }
+    try { $k.GetValue($Name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } finally { $k.Close() }
+}
+
+# Chiavi HKCU toccate dal pack: confrontate prima/dopo il ripristino
+$Watch = @(
+    'Control Panel\Cursors'
+    'Control Panel\Desktop'
+    'AppEvents\Schemes'
+    'Software\Microsoft\Windows\CurrentVersion\Themes'
+    'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent'
+    'Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+    'Software\Microsoft\Windows\CurrentVersion\Explorer\Serialize'
+    'Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+    'Software\Microsoft\Windows\CurrentVersion\Search'
+    'Software\Microsoft\Windows\CurrentVersion\GameDVR'
+    'Software\Microsoft\Windows\CurrentVersion\BackgroundAccessApplications'
+    'Software\Microsoft\Windows\CurrentVersion\Feeds'
+    'Software\Microsoft\Windows\DWM'
+    'Software\Microsoft\GameBar'
+    'Software\Policies\Microsoft\Windows\Explorer'
+    'Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+    'System\GameConfigStore'
+)
+# Valori che Windows ricalcola da solo (cache dello sfondo)
+$Volatile = @('Control Panel\Desktop\[TranscodedImageCache]', 'Control Panel\Desktop\[TranscodedImageCount]')
+
+function Get-RegSnapshot {
+    $lines = New-Object System.Collections.Generic.List[string]
+    $dump = {
+        param([string]$Sub)
+        $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($Sub)
+        if (-not $k) { $lines.Add("$Sub <assente>"); return }
+        try {
+            foreach ($n in $k.GetValueNames()) {
+                if ($Volatile -contains "$Sub\[$n]") { continue }
+                $v = $k.GetValue($n, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+                if ($v -is [byte[]]) { $v = [Convert]::ToBase64String($v) } elseif ($v -is [array]) { $v = $v -join '|' }
+                $lines.Add("$Sub\[$n]=$($k.GetValueKind($n)):$v")
+            }
+            foreach ($c in $k.GetSubKeyNames()) { & $dump "$Sub\$c" }
+        } finally { $k.Close() }
+    }
+    foreach ($w in $Watch) { & $dump $w }
+    $lines | Sort-Object
+}
+
+$installErrors = New-Object System.Collections.Generic.List[string]
+Set-StarkLogger {
+    param($m, $l, $p)
+    Write-Host ("    [{0}] {1}" -f $l.ToUpper(), $m) -ForegroundColor $(switch ($l) { 'error' { 'Red' } 'warn' { 'Yellow' } 'ok' { 'Green' } default { 'Gray' } })
+    if ($l -eq 'error') { $installErrors.Add($m) }
+}
+
+# =====================================================================================
+Section 'Ambiente'
+$envInfo = Test-StarkEnvironment
+$envInfo | Format-List | Out-String | Write-Host
+$disp = Get-StarkDisplay
+Write-Host "Schermo: $($disp.Width)x$($disp.Height) scala $($disp.Scale)"
+Check ($disp.Width -gt 0 -and $disp.Height -gt 0) 'Risoluzione leggibile'
+Check $envInfo.PSDesktop 'Windows PowerShell 5.1'
+
+# =====================================================================================
+Section '1. Asset validati con le API di Windows'
+Add-Type -Namespace StarkTest -Name User32 -MemberDefinition @'
+[DllImport("user32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+public static extern IntPtr LoadCursorFromFile(string lpFileName);
+[DllImport("user32.dll")]
+public static extern bool DestroyCursor(IntPtr hCursor);
+'@
+foreach ($f in Get-ChildItem (Join-Path $root 'theme\cursors') -File) {
+    $h = [StarkTest.User32]::LoadCursorFromFile($f.FullName)
+    Check ($h -ne [IntPtr]::Zero) "Cursore caricabile da Windows: $($f.Name)"
+    if ($h -ne [IntPtr]::Zero) { [void][StarkTest.User32]::DestroyCursor($h) }
+}
+foreach ($f in Get-ChildItem (Join-Path $root 'theme\sounds') -Filter *.wav) {
+    $ok = $true
+    try { $sp = New-Object System.Media.SoundPlayer $f.FullName; $sp.Load(); $sp.Dispose() } catch { $ok = $false }
+    Check $ok "Suono WAV valido: $($f.Name)"
+}
+Add-Type -AssemblyName System.Drawing
+foreach ($f in Get-ChildItem (Join-Path $root 'theme\fonts') -Filter *.ttf) {
+    $pfc = New-Object System.Drawing.Text.PrivateFontCollection
+    $pfc.AddFontFile($f.FullName)
+    Check ($pfc.Families.Count -eq 1 -and $pfc.Families[0].Name -match 'Rajdhani|Share Tech Mono') "Font leggibile: $($f.Name) -> $($pfc.Families[0].Name)"
+    $pfc.Dispose()
+}
+foreach ($f in Get-ChildItem (Join-Path $root 'theme\wallpapers') -Filter *.jpg) {
+    $img = [System.Drawing.Image]::FromFile($f.FullName)
+    Check ($img.Width -ge 3000) "Sfondo $($f.Name) $($img.Width)x$($img.Height)"
+    $img.Dispose()
+}
+Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, System.Xaml
+try {
+    [xml]$x = Get-Content (Join-Path $root 'src\MainWindow.xaml') -Raw -Encoding UTF8
+    $w = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $x))
+    Check ($null -ne $w.FindName('BtnInstall')) 'XAML installer caricato da WPF'
+    $w.Close()
+} catch { Check $false 'XAML installer caricato da WPF' $_.Exception.Message }
+foreach ($j in 'components\lively\StarkReactor\LivelyInfo.json', 'components\lively\StarkReactor\LivelyProperties.json', 'config\tweaks.json') {
+    $ok = $true
+    try { $null = Get-Content (Join-Path $root $j) -Raw -Encoding UTF8 | ConvertFrom-Json } catch { $ok = $false }
+    Check $ok "JSON valido per PowerShell 5.1: $j"
+}
+$ttb = (Get-Content (Join-Path $root 'components\translucenttb\settings.json') -Raw) -replace '(?m)^\s*//.*$', ''
+$ok = $true; try { $null = $ttb | ConvertFrom-Json } catch { $ok = $false }
+Check $ok 'JSON TranslucentTB valido'
+try { [xml]$null = Get-Content (Join-Path $root 'components\flowlauncher\StarkHUD.xaml') -Raw -Encoding UTF8; Check $true 'XAML Flow Launcher ben formato' }
+catch { Check $false 'XAML Flow Launcher ben formato' $_.Exception.Message }
+
+# =====================================================================================
+Section '2. Fotografia del registro'
+$before = @(Get-RegSnapshot)
+$before | Set-Content (Join-Path $OutDir 'registry-before.txt') -Encoding UTF8
+Write-Host "Valori registrati: $($before.Count)"
+
+# =====================================================================================
+Section '3. Installazione'
+$o = Get-StarkPreset 'Default'
+$allTweaks = @(Get-StarkTweaks)
+$o.Tweaks = @($allTweaks | ForEach-Object { $_.id })
+$o.RestartExplorer = $false
+$o.RestorePoint = $true
+$o.City = 'Roma'
+foreach ($k in 'Rainmeter', 'Lively', 'FlowLauncher', 'TranslucentTB', 'TaskbarX', 'Nilesoft', 'LivelyAudio') { $o[$k] = [bool]$Components }
+$o.Windhawk = $false
+$t = Measure-Command { Install-StarkHUD -Options $o }
+Write-Host ("Durata installazione: {0:N0} s" -f $t.TotalSeconds)
+Check ($installErrors.Count -eq 0) 'Installazione senza errori' ($installErrors -join ' | ')
+
+$assets = Join-Path $env:LOCALAPPDATA 'StarkHUD\theme'
+Section '3a. Verifica tema nativo'
+$arrow = Get-RegValue 'Control Panel\Cursors' 'Arrow'
+Check ($arrow -like '*\cursors\arrow.cur' -and (Test-Path $arrow)) 'Cursore Arrow' $arrow
+Check ((Get-RegValue 'Control Panel\Cursors' 'Wait') -like '*busy.ani') 'Cursore Wait animato'
+$scheme = Get-RegValue 'Control Panel\Cursors\Schemes' 'Stark HUD'
+Check ($scheme -and ($scheme -split ',').Count -eq 17) 'Schema cursori con 17 voci'
+Check ((Get-RegValue 'AppEvents\Schemes' '') -eq 'StarkHUD') 'Schema suoni attivo'
+$ast = Get-RegValue 'AppEvents\Schemes\Apps\.Default\SystemAsterisk\.Current' ''
+Check ($ast -like '*asterisk.wav' -and (Test-Path $ast)) 'Suono SystemAsterisk' $ast
+Check ((Get-RegValue 'AppEvents\Schemes\Apps\Explorer\EmptyRecycleBin\.Current' '') -like '*recycle.wav') 'Suono cestino'
+$fontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+foreach ($ff in 'Rajdhani-Light.ttf', 'ShareTechMono-Regular.ttf') { Check (Test-Path (Join-Path $fontDir $ff)) "Font installato: $ff" }
+Check ((Get-RegValue 'Software\Microsoft\Windows NT\CurrentVersion\Fonts' 'Rajdhani Light (TrueType)') -like '*Rajdhani-Light.ttf') 'Font registrato per l''utente'
+Check ((Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'AppsUseLightTheme') -eq 0) 'Modalita'' scura app'
+Check ((Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'EnableTransparency') -eq 1) 'Trasparenze'
+$pal = Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentPalette'
+Check ($pal -is [byte[]] -and $pal.Length -eq 32) 'Tavolozza accento 32 byte'
+Check ((Get-RegValue 'Software\Microsoft\Windows\DWM' 'AccentColor') -eq -3697152) 'AccentColor ABGR ciano'
+$themeFile = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Themes\StarkHUD.theme'
+Check (Test-Path $themeFile) 'File StarkHUD.theme creato'
+if (Test-Path $themeFile) {
+    $tc = Get-Content $themeFile -Raw
+    $wpLine = ([regex]::Match($tc, '(?m)^Wallpaper=(.+?)\r?$')).Groups[1].Value
+    Check (Test-Path $wpLine) 'Il tema punta a uno sfondo esistente' $wpLine
+}
+$wall = Get-RegValue 'Control Panel\Desktop' 'Wallpaper'
+Check ($wall -like '*StarkHUD-Desktop-*.jpg') 'Sfondo del desktop applicato' $wall
+$startup = [Environment]::GetFolderPath('Startup')
+Check (Test-Path (Join-Path $startup 'Stark HUD - suono di avvio.lnk')) 'Collegamento suono di avvio'
+
+Section '3b. Verifica ottimizzazioni'
+foreach ($tw in $allTweaks) {
+    if ($tw.PSObject.Properties['registry']) {
+        foreach ($r in $tw.registry) {
+            $sub = $r.path -replace '^HKCU:\\', ''
+            $v = Get-RegValue $sub $r.name
+            Check ("$v" -eq "$($r.value)") "Ottimizzazione $($tw.id): $($r.name)" "(atteso $($r.value), trovato $v)"
+        }
+    }
+}
+
+if ($Components) {
+    Section '3c. Verifica componenti'
+    $skins = Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Rainmeter\Skins\StarkHUD'
+    Check (Test-Path (Join-Path $skins 'Clock\Clock.ini')) 'Skin Rainmeter copiate'
+    Check (Test-Path (Join-Path $skins '@Resources\Fonts\Rajdhani-Light.ttf')) 'Font nelle skin Rainmeter'
+    if (Test-Path (Join-Path $skins '@Resources\Variables.inc')) {
+        $vars = Get-Content (Join-Path $skins '@Resources\Variables.inc') -Raw
+        Check ($vars -match '(?m)^City=Roma\r?$') 'Citta'' meteo impostata'
+        Check ($vars -match '(?m)^Scale=\d') 'Scala HiDPI impostata'
+    }
+    Check (Test-Path (Join-Path $env:APPDATA 'Rainmeter\Layouts\StarkHUD\Rainmeter.ini')) 'Layout Rainmeter generato'
+    $livelyDir = Join-Path $env:LOCALAPPDATA 'Lively Wallpaper\Library\wallpapers\StarkReactor'
+    Check (Test-Path (Join-Path $livelyDir 'index.html')) 'Sfondo Lively nella libreria'
+    Check (Test-Path (Join-Path $livelyDir 'fonts\Rajdhani-Light.ttf')) 'Font nello sfondo Lively'
+    if (Test-Path (Join-Path $livelyDir 'LivelyInfo.json')) {
+        $li = Get-Content (Join-Path $livelyDir 'LivelyInfo.json') -Raw | ConvertFrom-Json
+        Check ($li.Arguments -match '--audio') 'Lively: audio attivato su richiesta'
+        $lp = Get-Content (Join-Path $livelyDir 'LivelyProperties.json') -Raw | ConvertFrom-Json
+        Check ($lp.showClock.value -eq $false) 'Lively: orologio spento quando c''e'' Rainmeter'
+    }
+    $flowTheme = Join-Path $env:APPDATA 'FlowLauncher\Themes\StarkHUD.xaml'
+    Check (Test-Path $flowTheme) 'Tema Flow Launcher copiato'
+    $flowSettings = Join-Path $env:APPDATA 'FlowLauncher\Settings\Settings.json'
+    if (Test-Path $flowSettings) {
+        $fs = Get-Content $flowSettings -Raw -Encoding UTF8 | ConvertFrom-Json
+        Check ($fs.Theme -eq 'StarkHUD') 'Flow Launcher usa il tema Stark HUD'
+    } else { Check $false 'Impostazioni Flow Launcher scritte' }
+    $ttbCfg = Join-Path $env:LOCALAPPDATA 'Packages\28017CharlesMilette.TranslucentTB_v826wp6bftszj\RoamingState\settings.json'
+    Check (Test-Path $ttbCfg) 'Configurazione TranslucentTB'
+    Check (Test-Path (Join-Path $env:LOCALAPPDATA 'StarkHUD\apps\TaskbarX\TaskbarX.exe')) 'TaskbarX scaricato e verificato'
+    Check (Test-Path (Join-Path $startup 'Stark HUD - TaskbarX.lnk')) 'TaskbarX all''avvio'
+    $nss = Join-Path $env:ProgramFiles 'Nilesoft Shell\imports\theme.nss'
+    Check ((Test-Path $nss) -and ((Get-Content $nss -Raw) -match 'Stark HUD')) 'Tema Nilesoft Shell'
+}
+
+# =====================================================================================
+Section '4. Seconda installazione (idempotenza)'
+$state1 = Get-Content (Join-Path $env:LOCALAPPDATA 'StarkHUD\state\backup.json') -Raw | ConvertFrom-Json
+$o.RestorePoint = $false
+$installErrors.Clear()
+Install-StarkHUD -Options $o
+$state2 = Get-Content (Join-Path $env:LOCALAPPDATA 'StarkHUD\state\backup.json') -Raw | ConvertFrom-Json
+Check (@($state1.registry).Count -eq @($state2.registry).Count) 'Il backup non si duplica' "($(@($state1.registry).Count) vs $(@($state2.registry).Count))"
+Check (@($state1.files).Count -eq @($state2.files).Count) 'I file di backup non si duplicano'
+Check ($installErrors.Count -eq 0) 'Seconda installazione senza errori' ($installErrors -join ' | ')
+
+# =====================================================================================
+Section '5. Ripristino'
+$installErrors.Clear()
+$t = Measure-Command { Restore-StarkHUD -RemoveApps:$Components }
+Write-Host ("Durata ripristino: {0:N0} s" -f $t.TotalSeconds)
+Check ($installErrors.Count -eq 0) 'Ripristino senza errori' ($installErrors -join ' | ')
+$after = @(Get-RegSnapshot)
+$after | Set-Content (Join-Path $OutDir 'registry-after.txt') -Encoding UTF8
+$diff = @(Compare-Object -ReferenceObject $before -DifferenceObject $after)
+foreach ($d in $diff) { Write-Host ("    {0} {1}" -f $(if ($d.SideIndicator -eq '<=') { 'PRIMA ' } else { 'DOPO  ' }), $d.InputObject) -ForegroundColor Yellow }
+Check ($diff.Count -eq 0) 'Registro identico a prima dell''installazione' "($($diff.Count) differenze)"
+Check (-not (Test-Path (Join-Path $fontDir 'Rajdhani-Light.ttf'))) 'Font rimossi'
+Check (-not (Test-Path $themeFile)) 'File tema rimosso'
+Check (-not (Test-Path (Join-Path $startup 'Stark HUD - suono di avvio.lnk'))) 'Collegamento di avvio rimosso'
+Check (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'StarkHUD\state'))) 'Backup archiviato'
+Check (-not (Test-Path $assets)) 'Risorse rimosse'
+$cur = Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Themes' 'CurrentTheme'
+Check (-not $cur -or (Test-Path $cur)) 'Il tema attivo punta a un file esistente' "$cur"
+if ($Components) {
+    Check (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Rainmeter\Skins\StarkHUD'))) 'Skin Rainmeter rimosse'
+    Check (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Lively Wallpaper\Library\wallpapers\StarkReactor'))) 'Sfondo Lively rimosso'
+    Check (-not (Test-Path (Join-Path $env:APPDATA 'FlowLauncher\Themes\StarkHUD.xaml'))) 'Tema Flow rimosso'
+    Check (-not (Test-Path (Join-Path $startup 'Stark HUD - TaskbarX.lnk'))) 'TaskbarX rimosso dall''avvio'
+}
+
+# =====================================================================================
+Section '6. Interfaccia grafica (modalita'' test)'
+$shot = Join-Path $OutDir 'gui.png'
+$ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+$p = Start-Process -FilePath $ps -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', "`"$(Join-Path $root 'StarkUI.ps1')`"", '-SmokeTest', '-Screenshot', "`"$shot`"") `
+    -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $OutDir 'gui-stdout.txt') -RedirectStandardError (Join-Path $OutDir 'gui-stderr.txt')
+if (-not $p.WaitForExit(120000)) { $p | Stop-Process -Force; Check $false 'Interfaccia: si chiude da sola' 'timeout 120 s' }
+else { Check ($p.ExitCode -eq 0) 'Interfaccia avviata e chiusa senza errori' "(codice $($p.ExitCode))" }
+Get-Content (Join-Path $OutDir 'gui-stdout.txt'), (Join-Path $OutDir 'gui-stderr.txt') -ErrorAction SilentlyContinue | Write-Host
+foreach ($tab in 'TabTheme', 'TabComponents', 'TabTweaks') {
+    $png = $shot -replace '\.png$', "-$tab.png"
+    Check (Test-Path $png) "Screenshot interfaccia: $tab"
+    if ((Test-Path $png) -and $env:STARK_PRINT_SCREENSHOTS) {
+        # anteprima JPEG ridotta stampata nel log (base64) per chi non puo' scaricare gli artifact
+        $src = New-Object System.Windows.Media.Imaging.BitmapImage
+        $src.BeginInit(); $src.UriSource = New-Object Uri $png; $src.CacheOption = 'OnLoad'; $src.EndInit()
+        $scaled = New-Object System.Windows.Media.Imaging.TransformedBitmap($src, (New-Object System.Windows.Media.ScaleTransform(0.62, 0.62)))
+        $enc = New-Object System.Windows.Media.Imaging.JpegBitmapEncoder
+        $enc.QualityLevel = 82
+        $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($scaled))
+        $ms = New-Object System.IO.MemoryStream
+        $enc.Save($ms)
+        $b64 = [Convert]::ToBase64String($ms.ToArray())
+        Write-Host "=====BEGIN $tab====="
+        for ($i = 0; $i -lt $b64.Length; $i += 3000) { Write-Host $b64.Substring($i, [Math]::Min(3000, $b64.Length - $i)) }
+        Write-Host "=====END $tab====="
+    }
+}
+
+# =====================================================================================
+Section 'Risultato'
+Write-Host ("{0} ok, {1} falliti" -f $script:pass, $script:fail) -ForegroundColor $(if ($script:fail) { 'Red' } else { 'Green' })
+foreach ($f in $script:failures) { Write-Host " - $f" -ForegroundColor Red }
+exit $script:fail
