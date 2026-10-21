@@ -149,11 +149,11 @@ Test:
 
 - Funzioni pure: `powershell -ExecutionPolicy Bypass -File tests\Test-StarkCore.ps1`. Funziona anche con `pwsh` su Linux e macOS.
 - Test completo su Windows (**modifica davvero il sistema**: solo su VM o Windows Sandbox): `powershell -ExecutionPolicy Bypass -STA -File tests\Test-StarkWindows.ps1 [-Components]`.
-- In automatico: `.github/workflows/stark-hud-windows.yml`.
+- Su GitHub, solo ad avvio manuale (Actions → "Stark HUD - test Windows" → Run workflow): `.github/workflows/stark-hud-windows.yml`. Ricostruisce anche `W/StarkHUD-Setup.exe` se il pack è cambiato.
 
 **Cosa è stato verificato e cosa no:**
 
-- **Test su Windows reale.** Ad ogni modifica, GitHub Actions avvia due macchine Windows usa e getta ed esegue `tests/Test-StarkWindows.ps1`:
+- **Test su Windows reale.** A richiesta, GitHub Actions avvia due macchine Windows usa e getta ed esegue `tests/Test-StarkWindows.ps1`:
   - **Windows Server 2022** (build 20348, stessa base di Windows 10): tema nativo e ottimizzazioni;
   - **Windows Server 2025**: tema più tutte le app (Rainmeter, Lively, Flow Launcher, TranslucentTB, TaskbarX, Nilesoft), installate e poi disinstallate.
 - **Cosa controlla il test:**

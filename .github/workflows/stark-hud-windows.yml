@@ -2,12 +2,9 @@
 # Installa il pack, lo verifica con le API di Windows, lo ripristina e confronta il registro.
 name: Stark HUD - test Windows
 
+# Solo avvio manuale (Actions -> "Stark HUD - test Windows" -> Run workflow):
+# nessuna esecuzione automatica, quindi nessun minuto consumato senza che tu lo chieda.
 on:
-  push:
-    paths:
-      - 'windows-stark-ui/**'
-      - 'W/**'
-      - '.github/workflows/stark-hud-windows.yml'
   workflow_dispatch:
 
 jobs:
@@ -83,7 +80,7 @@ jobs:
           exit $LASTEXITCODE
 
       - name: Salvataggio nella cartella W
-        if: steps.build.outputs.built == 'true' && github.event_name == 'push'
+        if: steps.build.outputs.built == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
