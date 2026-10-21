@@ -143,13 +143,29 @@ python3 tools/gen_sounds.py       # schema suoni .wav
 node tools/render-wallpapers.js   # sfondi 4K, ultrawide, blocco schermo, anteprime
 ```
 
-Test: `powershell -ExecutionPolicy Bypass -File tests\Test-StarkCore.ps1`. Funziona anche con `pwsh` su Linux e macOS.
+Test:
+
+- Funzioni pure: `powershell -ExecutionPolicy Bypass -File tests\Test-StarkCore.ps1`. Funziona anche con `pwsh` su Linux e macOS.
+- Test completo su Windows (**modifica davvero il sistema**: solo su VM o Windows Sandbox): `powershell -ExecutionPolicy Bypass -STA -File tests\Test-StarkWindows.ps1 [-Components]`.
+- In automatico: `.github/workflows/stark-hud-windows.yml`.
 
 **Cosa è stato verificato e cosa no:**
 
-- Verificato: le funzioni pure passano 33 test automatici; gli script passano PSScriptAnalyzer con controllo di compatibilità PowerShell 5.1; XAML e JSON sono validi.
-- Verificato sul codice sorgente delle app: i formati di configurazione di Lively, Flow Launcher, TranslucentTB, Rainmeter e Nilesoft.
-- **Non verificato:** l'installazione completa non è stata eseguita su un PC Windows reale. Prima di usarlo sul PC principale, provalo su una macchina virtuale o dopo un punto di ripristino (l'installer lo crea per te).
+- **Test su Windows reale.** Ad ogni modifica, GitHub Actions avvia due macchine Windows usa e getta ed esegue `tests/Test-StarkWindows.ps1`:
+  - **Windows Server 2022** (build 20348, stessa base di Windows 10): tema nativo e ottimizzazioni;
+  - **Windows Server 2025**: tema più tutte le app (Rainmeter, Lively, Flow Launcher, TranslucentTB, TaskbarX, Nilesoft), installate e poi disinstallate.
+- **Cosa controlla il test:**
+  - cursori, suoni, font e XAML caricati con le API di Windows;
+  - ogni modifica verificata dopo l'installazione;
+  - una seconda installazione, che non deve duplicare il backup;
+  - il ripristino, con il registro utente confrontato valore per valore con quello iniziale;
+  - l'apertura dell'interfaccia, con uno screenshot di ogni scheda.
+- **Errori trovati così e corretti:** sono elencati in [docs/RICERCA.md](docs/RICERCA.md#5-test-su-windows-reale-errori-trovati-e-corretti).
+- **Altre verifiche:**
+  - le funzioni pure passano 39 test automatici, anche con Windows PowerShell 5.1;
+  - gli script passano PSScriptAnalyzer;
+  - i formati di configurazione delle app sono stati controllati sul loro codice sorgente.
+- **Limite:** i runner sono Windows Server, non un Windows 10 Home/Pro con un utente reale. Il primo utilizzo resta consigliato con il punto di ripristino attivo (l'installer lo crea da solo).
 
 ## Crediti e licenze
 

@@ -76,3 +76,26 @@ Tutte le configurazioni del pack sono state controllate sul sorgente delle app, 
 | Windhawk | `RamenSoftware.Windhawk` | opzionale |
 | Nilesoft Shell | `Nilesoft.Shell` | opzionale, MSI di sistema |
 | TaskbarX | — | non è su winget: ZIP ufficiale GitHub 1.7.8.0, SHA256 `ab192d20…5a3e2` |
+
+## 5. Test su Windows reale: errori trovati e corretti
+
+Il pack viene installato, verificato e ripristinato su macchine Windows usa e getta (GitHub Actions, Windows Server 2022 e 2025).
+Questi test hanno trovato errori che un controllo del codice non avrebbe mostrato.
+
+| # | Problema trovato | Effetto | Correzione |
+|---|---|---|---|
+| 1 | Un array di un solo elemento restituito da una funzione diventa una stringa, e lo splatting la spezza lettera per lettera | `--disable-interactivity` arrivava a winget come `- - d i s a …`: **nessuna app si installava** (errore 0x8A150002) | Chiamate a winget tramite `Start-Process` con argomenti costruiti in modo esplicito + test di regressione |
+| 2 | `switch` srotola `byte[]` in `object[]` | La scrittura di `AccentPalette` falliva e **interrompeva l'applicazione del tema** | Funzione `ConvertTo-StarkRegData` che preserva i tipi + test |
+| 3 | `Duration="0:0:90"` non è un TimeSpan valido | L'installer grafico non si apriva | `0:1:30` |
+| 4 | `New-Object` avvolge l'oggetto in un PSObject che WPF rifiuta come FontFamily | L'installer grafico non si apriva | `[FontFamily]::new(...)` |
+| 5 | In PowerShell `$title` e `$Title` sono la stessa variabile | L'installer grafico non si apriva | Variabile rinominata + controllo automatico su tutto il codice |
+| 6 | Un file `.theme` aperto con doppio clic simulato viene applicato **in modo asincrono** | Windows lo applicava dopo il ripristino, rimettendo cursori, suoni e sfondo Stark | Tema applicato direttamente (registro + API), in modo sincrono |
+| 7 | `AddFontResource` conta i caricamenti; la cache dei font tiene i file aperti | I font non si cancellavano | `RemoveFontResource` ripetuto, nuovi tentativi, cancellazione al prossimo accesso come ultima risorsa |
+| 8 | Il disinstallatore di Lively attende una conferma invisibile se l'app è aperta | **Il ripristino si bloccava per sempre** | App chiuse prima della disinstallazione + timeout su ogni chiamata esterna |
+| 9 | Flow Launcher tiene aperto il proprio file tema | Seconda installazione in errore | Flow chiuso prima di aggiornarlo |
+| 10 | Esplora risorse salva lo stato "icone del desktop" per conto suo | Le icone restavano nascoste dopo il ripristino | Stesso comando di "Visualizza > Mostra icone del desktop" |
+| 11 | L'API della schermata di blocco spegne Windows Spotlight da sola | Spotlight non tornava | Valori salvati prima della chiamata; immagine ripristinata prima del registro |
+| 12 | Windows sorveglia la chiave Accent e riallinea il colore delle finestre (DWM): verso il nuovo colore lo fa subito, al ritorno solo dopo `ImmersiveColorSet` e solo se vede una discordanza | Il ripristino riscriveva i valori DWM, Windows "non vedeva nulla da fare" e DWM rimetteva il ciano | Valori DWM salvati solo per verifica, mai riscritti; avviso `ImmersiveColorSet` e attesa del riallineamento |
+
+Il punto 12 è stato chiarito con un esperimento dedicato su una macchina pulita. L'accento veniva cambiato uno stimolo alla volta (registro, avvisi di sistema, sfondo, schermata di blocco, riavvio di Esplora risorse), misurando dopo ognuno il colore che DWM aveva in memoria.
+Lo stesso esperimento ha mostrato che `SetUserColorPreference` non è esportata da `uxtheme.dll` sulle versioni recenti. Le soluzioni che girano online e la usano quindi non funzionano.
