@@ -63,8 +63,13 @@ $Watch = @(
     'Software\Microsoft\Windows NT\CurrentVersion\Fonts'
     'System\GameConfigStore'
 )
-# Valori che Windows ricalcola da solo (cache dello sfondo)
-$Volatile = @('Control Panel\Desktop\[TranscodedImageCache]', 'Control Panel\Desktop\[TranscodedImageCount]')
+# Valori che Windows ricalcola da solo (cache dello sfondo, indice della ricerca): esclusi dal confronto
+$Volatile = @(
+    'Control Panel\Desktop\`[TranscodedImageCache`]'
+    'Control Panel\Desktop\`[TranscodedImageCount`]'
+    'Software\Microsoft\Windows\CurrentVersion\Search\`[InstalledWin32AppsRevision`]'
+    'Software\Microsoft\Windows\CurrentVersion\Search\JumplistData\*'
+)
 
 function Get-RegSnapshot {
     $lines = New-Object System.Collections.Generic.List[string]
@@ -74,7 +79,8 @@ function Get-RegSnapshot {
         if (-not $k) { $lines.Add("$Sub <assente>"); return }
         try {
             foreach ($n in $k.GetValueNames()) {
-                if ($Volatile -contains "$Sub\[$n]") { continue }
+                $id = "$Sub\[$n]"
+                if ($Volatile | Where-Object { $id -like $_ }) { continue }
                 $v = $k.GetValue($n, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
                 if ($v -is [byte[]]) { $v = [Convert]::ToBase64String($v) } elseif ($v -is [array]) { $v = $v -join '|' }
                 $lines.Add("$Sub\[$n]=$($k.GetValueKind($n)):$v")
@@ -289,6 +295,7 @@ $shot = Join-Path $OutDir 'gui.png'
 $ps = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
 $p = Start-Process -FilePath $ps -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-STA', '-File', "`"$(Join-Path $root 'StarkUI.ps1')`"", '-SmokeTest', '-Screenshot', "`"$shot`"") `
     -PassThru -NoNewWindow -RedirectStandardOutput (Join-Path $OutDir 'gui-stdout.txt') -RedirectStandardError (Join-Path $OutDir 'gui-stderr.txt')
+$null = $p.Handle  # senza questo PowerShell 5.1 perde il codice di uscita
 if (-not $p.WaitForExit(120000)) { $p | Stop-Process -Force; Check $false 'Interfaccia: si chiude da sola' 'timeout 120 s' }
 else { Check ($p.ExitCode -eq 0) 'Interfaccia avviata e chiusa senza errori' "(codice $($p.ExitCode))" }
 Get-Content (Join-Path $OutDir 'gui-stdout.txt'), (Join-Path $OutDir 'gui-stderr.txt') -ErrorAction SilentlyContinue | Write-Host
@@ -314,6 +321,7 @@ foreach ($tab in 'TabTheme', 'TabComponents', 'TabTweaks') {
 
 # =====================================================================================
 Section 'Risultato'
+Copy-Item -Path (Join-Path $env:LOCALAPPDATA 'StarkHUD\logs\*') -Destination $OutDir -ErrorAction SilentlyContinue
 Write-Host ("{0} ok, {1} falliti" -f $script:pass, $script:fail) -ForegroundColor $(if ($script:fail) { 'Red' } else { 'Green' })
 foreach ($f in $script:failures) { Write-Host " - $f" -ForegroundColor Red }
 exit $script:fail

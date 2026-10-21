@@ -364,7 +364,7 @@
                                     <Storyboard Timeline.DesiredFrameRate="30">
                                         <DoubleAnimation Storyboard.TargetName="R1" Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)" From="0" To="360" Duration="0:0:40" RepeatBehavior="Forever" />
                                         <DoubleAnimation Storyboard.TargetName="R2" Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)" From="0" To="-360" Duration="0:0:14" RepeatBehavior="Forever" />
-                                        <DoubleAnimation Storyboard.TargetName="R3" Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)" From="0" To="360" Duration="0:0:90" RepeatBehavior="Forever" />
+                                        <DoubleAnimation Storyboard.TargetName="R3" Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)" From="0" To="360" Duration="0:1:30" RepeatBehavior="Forever" />
                                         <DoubleAnimation Storyboard.TargetName="R4" Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)" From="0" To="-360" Duration="0:0:26" RepeatBehavior="Forever" />
                                         <DoubleAnimation Storyboard.TargetName="Glow" Storyboard.TargetProperty="Opacity" From="0.4" To="0.85" Duration="0:0:2.8" AutoReverse="True" RepeatBehavior="Forever">
                                             <DoubleAnimation.EasingFunction><SineEase EasingMode="EaseInOut" /></DoubleAnimation.EasingFunction>

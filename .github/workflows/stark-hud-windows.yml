@@ -37,6 +37,7 @@ jobs:
           [Environment]::OSVersion.VersionString
           $PSVersionTable.PSVersion.ToString()
           Get-Command winget.exe -ErrorAction SilentlyContinue | Select-Object Source
+          if (Get-Command winget.exe -ErrorAction SilentlyContinue) { winget --version }
           Get-Process explorer -ErrorAction SilentlyContinue | Select-Object Id, SessionId
 
       - name: Installazione, verifica e ripristino
@@ -52,7 +53,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: stark-hud-${{ matrix.os }}
-          path: |
-            windows-stark-ui/tests/out/
-            ~/AppData/Local/StarkHUD/logs/
+          path: windows-stark-ui/tests/out/
           if-no-files-found: ignore

@@ -443,6 +443,18 @@ function Register-StarkCreatedKey {
     if ($firstMissing -and -not ($s.keysCreated -contains $firstMissing)) { [void]$s.keysCreated.Add($firstMissing) }
 }
 
+function ConvertTo-StarkRegData {
+    <# Converte un valore nel tipo .NET richiesto da RegistryKey.SetValue. La virgola evita che gli array vengano srotolati. #>
+    param($Value, [Parameter(Mandatory)][string]$Type)
+    switch ($Type) {
+        'DWord' { if ([int64]$Value -gt [int32]::MaxValue) { return ConvertTo-StarkDword ([uint32]$Value) } else { return [int32]$Value } }
+        'QWord' { return [int64]$Value }
+        'Binary' { return , ([byte[]]@($Value)) }
+        'MultiString' { return , ([string[]]@($Value)) }
+        default { return [string]$Value }
+    }
+}
+
 function Set-StarkRegValue {
     param(
         [Parameter(Mandatory)][string]$Path,
@@ -455,13 +467,7 @@ function Set-StarkRegValue {
     $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey((Get-StarkHkcuSubKey $Path))
     try {
         $kind = [Microsoft.Win32.RegistryValueKind]$Type
-        $data = switch ($Type) {
-            'DWord' { if ([int64]$Value -gt [int32]::MaxValue) { ConvertTo-StarkDword ([uint32]$Value) } else { [int32]$Value } }
-            'QWord' { [int64]$Value }
-            'Binary' { [byte[]]$Value }
-            'MultiString' { [string[]]$Value }
-            default { [string]$Value }
-        }
+        $data = ConvertTo-StarkRegData -Value $Value -Type $Type
         $key.SetValue($Name, $data, $kind)
     } finally { $key.Close() }
 }
@@ -576,7 +582,7 @@ function Get-StarkWingetFlags {
 
 function Test-StarkWingetPackage {
     param([Parameter(Mandatory)][string]$Id)
-    $flags = Get-StarkWingetFlags
+    $flags = @(Get-StarkWingetFlags)
     $out = & winget.exe list --id $Id -e --accept-source-agreements @flags 2>$null | Out-String
     ($LASTEXITCODE -eq 0) -and ($out -match [regex]::Escape($Id))
 }
@@ -593,8 +599,8 @@ function Install-StarkApp {
         return $true
     }
     Write-StarkLog "Installazione $Name (winget $Id)... potrebbe comparire un prompt UAC." 'info'
-    $flags = Get-StarkWingetFlags
-    & winget.exe install --id $Id -e --silent --accept-package-agreements --accept-source-agreements @flags | Out-Null
+    $flags = @(Get-StarkWingetFlags)
+    $wingetOut = & winget.exe install --id $Id -e --silent --accept-package-agreements --accept-source-agreements @flags 2>&1 | Out-String
     if ($LASTEXITCODE -eq 0 -or (Test-StarkWingetPackage -Id $Id)) {
         $s = Get-StarkState
         if (-not ($s.apps -contains $Id)) { [void]$s.apps.Add($Id) }
@@ -602,7 +608,8 @@ function Install-StarkApp {
         Write-StarkLog "$Name installato." 'ok'
         return $true
     }
-    Write-StarkLog "Installazione di $Name non riuscita (codice $LASTEXITCODE)." 'error'
+    $tail = (($wingetOut -split "`r?`n") | Where-Object { $_.Trim() -and $_ -notmatch '^[\s\-\\|/]+$' } | Select-Object -Last 3) -join ' / '
+    Write-StarkLog ("Installazione di $Name non riuscita (codice 0x{0:X8}): {1}" -f $LASTEXITCODE, $tail) 'error'
     $false
 }
 
@@ -764,6 +771,12 @@ function Set-StarkLockScreen {
             $t = $asTaskOp.MakeGenericMethod($type).Invoke($null, @($op)); $t.Wait(-1) | Out-Null; $t.Result
         }
         $awaitAction = { param($a) $t = $asTaskAct.Invoke($null, @($a)); $t.Wait(-1) | Out-Null }
+
+        # Windows spegne Spotlight da solo quando si imposta un'immagine: salva prima i valori originali
+        $cdm = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\ContentDeliveryManager'
+        Backup-StarkRegValue -Path $cdm -Name 'RotatingLockScreenEnabled'
+        Backup-StarkRegValue -Path $cdm -Name 'RotatingLockScreenOverlayEnabled'
+        Save-StarkState
 
         # copia dell'immagine di blocco attuale (una sola volta)
         if (-not (Get-StarkExtra 'previousLockScreen')) {
@@ -1158,7 +1171,18 @@ function Restore-StarkHUD {
         Invoke-StarkThemeFile -Path $themeToApply
     }
 
-    # 3) registro: valori originali in ordine inverso, poi rimozione delle chiavi create
+    # 3) schermata di blocco prima del registro: l'API di Windows riscrive i valori di Spotlight.
+    #    Se prima era attivo Spotlight basta ripristinare il registro (Spotlight riparte da solo).
+    $spot = $s.registry | Where-Object { $_.name -eq 'RotatingLockScreenEnabled' } | Select-Object -First 1
+    $spotlightWasOn = $spot -and $spot.existed -and [int]$spot.value -eq 1
+    $lock = Get-StarkExtra 'previousLockScreen'
+    if (-not $spotlightWasOn -and $lock -and (Test-Path -LiteralPath $lock)) {
+        $keepLock = Join-Path $env:APPDATA 'Microsoft\Windows\Themes\StarkHUD-previous-lockscreen.jpg'
+        Copy-Item -LiteralPath $lock -Destination $keepLock -Force
+        Set-StarkLockScreen -ImagePath $keepLock
+    }
+
+    # 4) registro: valori originali in ordine inverso, poi rimozione delle chiavi create
     Write-StarkLog 'Ripristino dei valori di registro originali...' 'info' 45
     for ($i = $s.registry.Count - 1; $i -ge 0; $i--) {
         $e = $s.registry[$i]
@@ -1168,13 +1192,8 @@ function Restore-StarkHUD {
                 $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($sub)
                 try {
                     $kind = [Microsoft.Win32.RegistryValueKind]$e.kind
-                    $data = switch ($e.kind) {
-                        'Binary' { [Convert]::FromBase64String($e.value) }
-                        'DWord' { [int32]$e.value }
-                        'QWord' { [int64]$e.value }
-                        'MultiString' { [string[]]@($e.value) }
-                        default { [string]$e.value }
-                    }
+                    $raw = if ($e.kind -eq 'Binary') { , [Convert]::FromBase64String($e.value) } else { $e.value }
+                    $data = ConvertTo-StarkRegData -Value $raw -Type $(if ($e.kind -in 'String', 'ExpandString', 'DWord', 'QWord', 'Binary', 'MultiString') { $e.kind } else { 'String' })
                     $key.SetValue($e.name, $data, $kind)
                 } finally { $key.Close() }
             } else {
@@ -1187,11 +1206,11 @@ function Restore-StarkHUD {
         try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree((Get-StarkHkcuSubKey $s.keysCreated[$i]), $false) } catch { }
     }
 
-    # 4) font: scarica dalla sessione prima di cancellare i file
+    # 5) font: scarica dalla sessione prima di cancellare i file
     $fontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
     foreach ($file in $script:Fonts.Keys) { [void][StarkHUD.Native]::RemoveFontResource((Join-Path $fontDir $file)) }
 
-    # 5) file: ripristina le copie, elimina quelli creati da Stark HUD
+    # 6) file: ripristina le copie, elimina quelli creati da Stark HUD
     Write-StarkLog 'Ripristino dei file...' 'info' 60
     for ($i = $s.files.Count - 1; $i -ge 0; $i--) {
         $f = $s.files[$i]
@@ -1203,11 +1222,13 @@ function Restore-StarkHUD {
         } catch { Write-StarkLog "File $($f.target) non ripristinato: $($_.Exception.Message)" 'warn' }
     }
 
-    # 6) sfondo, schermata di blocco, piano energetico, menu contestuale
+    # 7) sfondo, piano energetico, menu contestuale
     $wpEntry = $s.registry | Where-Object { $_.path -eq 'HKCU:\Control Panel\Desktop' -and $_.name -eq 'Wallpaper' } | Select-Object -First 1
     $wpOriginal = if ($wpEntry -and $wpEntry.existed) { [Environment]::ExpandEnvironmentVariables([string]$wpEntry.value) } else { $null }
     $wp = Get-StarkExtra 'previousWallpaper'
-    if ($wpEntry -and $wpEntry.existed -and -not $wpOriginal) {
+    if (-not $wpEntry) {
+        # lo sfondo non e' mai stato cambiato da Stark HUD: non toccarlo
+    } elseif ($wpEntry.existed -and -not $wpOriginal) {
         [void][StarkHUD.Native]::SystemParametersInfo(0x0014, 0, '', 0x03)  # prima non c'era sfondo (tinta unita)
     } elseif ($wpOriginal -and (Test-Path -LiteralPath $wpOriginal)) {
         [void][StarkHUD.Native]::SystemParametersInfo(0x0014, 0, $wpOriginal, 0x03)
@@ -1215,12 +1236,6 @@ function Restore-StarkHUD {
         $keep = Join-Path $env:APPDATA 'Microsoft\Windows\Themes\StarkHUD-previous-wallpaper.jpg'
         Copy-Item -LiteralPath $wp -Destination $keep -Force
         [void][StarkHUD.Native]::SystemParametersInfo(0x0014, 0, $keep, 0x03)
-    }
-    $lock = Get-StarkExtra 'previousLockScreen'
-    if ($lock -and (Test-Path -LiteralPath $lock)) {
-        $keepLock = Join-Path $env:APPDATA 'Microsoft\Windows\Themes\StarkHUD-previous-lockscreen.jpg'
-        Copy-Item -LiteralPath $lock -Destination $keepLock -Force
-        Set-StarkLockScreen -ImagePath $keepLock
     }
     $power = Get-StarkExtra 'powerScheme'
     if ($power) { & powercfg.exe /setactive $power 2>$null }
@@ -1235,11 +1250,11 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
     [void][StarkHUD.Native]::SystemParametersInfo(0x0057, 0, $null, 0x03)
     Send-StarkSettingChange
 
-    # 7) app installate da Stark HUD (solo su richiesta)
+    # 8) app installate da Stark HUD (solo su richiesta)
     if ($RemoveApps) {
         foreach ($id in @($s.apps)) {
             Write-StarkLog "Disinstallazione $id..." 'info' 80
-            $flags = Get-StarkWingetFlags
+            $flags = @(Get-StarkWingetFlags)
             & winget.exe uninstall --id $id -e --silent @flags | Out-Null
         }
     } elseif ($s.apps.Count) {
