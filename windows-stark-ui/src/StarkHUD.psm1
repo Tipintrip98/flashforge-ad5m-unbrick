@@ -1355,7 +1355,16 @@ function Restore-StarkHUD {
         Set-StarkLockScreen -ImagePath $keepLock
     }
 
-    # 3) registro: valori originali in ordine inverso, poi rimozione delle chiavi create
+    # 3) colore accento con l'API di Windows, PRIMA del registro: se il registro fosse gia' tornato
+    #    all'originale, per Windows "non cambierebbe nulla" e il colore delle finestre (DWM) resterebbe Stark
+    $pref = Get-StarkExtra 'userColorPreference'
+    if ($pref) {
+        $ok = Set-StarkUserColor -Start ([uint32]$pref.start) -Accent ([uint32]$pref.accent)
+        Write-StarkLog ('Colore accento originale riapplicato con l''API di Windows ({0}).' -f $(if ($ok) { 'ok' } else { 'non disponibile' })) 'info'
+        Start-Sleep -Seconds 2
+    }
+
+    # 3b) registro: valori originali in ordine inverso, poi rimozione delle chiavi create
     Write-StarkLog 'Ripristino dei valori di registro originali...' 'info' 45
     [void](Restore-StarkRegistryValues -State $s)
     for ($i = $s.keysCreated.Count - 1; $i -ge 0; $i--) {
@@ -1435,21 +1444,20 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
     Restart-StarkExplorer
 
     # 8) stato tenuto in memoria da Windows ed Esplora risorse: si ripristina con le loro API
-    $pref = Get-StarkExtra 'userColorPreference'
-    if ($pref) {
-        $ok = Set-StarkUserColor -Start ([uint32]$pref.start) -Accent ([uint32]$pref.accent)
-        Write-StarkLog ('Colore accento originale riapplicato con l''API di Windows ({0}).' -f $(if ($ok) { 'ok' } else { 'non disponibile' })) 'info'
-        Start-Sleep -Seconds 2
-    }
     $dwmColor = $s.registry | Where-Object { $_.path -eq 'HKCU:\Software\Microsoft\Windows\DWM' -and $_.name -eq 'ColorizationColor' } | Select-Object -First 1
     $dwmGlow = $s.registry | Where-Object { $_.path -eq 'HKCU:\Software\Microsoft\Windows\DWM' -and $_.name -eq 'ColorizationAfterglow' } | Select-Object -First 1
     if ($dwmColor -and $dwmColor.existed) {
         $want = ConvertTo-StarkUInt32 $dwmColor.value
-        $now = Get-StarkDwmColor
-        if ($null -ne $now -and ($now -band 0x00FFFFFF) -ne ($want -band 0x00FFFFFF)) {
-            $glow = if ($dwmGlow -and $dwmGlow.existed) { ConvertTo-StarkUInt32 $dwmGlow.value } else { $want }
-            $ok = Set-StarkDwmColor -Color $want -Afterglow $glow
-            Write-StarkLog ('Colore finestre riportato all''originale 0x{0:X8} (DWM: {1}).' -f $want, $(if ($ok) { 'ok' } else { 'API non disponibile' })) 'info'
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\DWM')
+        $nowReg = if ($key) { try { $key.GetValue('ColorizationColor') } finally { $key.Close() } } else { $null }
+        if ($null -ne $nowReg -and ((ConvertTo-StarkUInt32 $nowReg) -band 0x00FFFFFF) -ne ($want -band 0x00FFFFFF) -and $pref) {
+            # Windows sincronizza DWM solo quando l'accento cambia davvero: piccolo cambio e ritorno all'originale
+            $acc = [uint32]$pref.accent
+            [void](Set-StarkUserColor -Start ([uint32]$pref.start) -Accent ($acc -bxor 0x00010101))
+            Start-Sleep -Seconds 1
+            $ok = Set-StarkUserColor -Start ([uint32]$pref.start) -Accent $acc
+            Start-Sleep -Seconds 2
+            Write-StarkLog ('Colore delle finestre risincronizzato con l''accento originale ({0}).' -f $(if ($ok) { 'ok' } else { 'API non disponibile' })) 'info'
         }
     }
     $icons = Get-StarkExtra 'desktopIconsVisible'
