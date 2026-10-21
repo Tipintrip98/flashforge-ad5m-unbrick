@@ -605,12 +605,15 @@ function Set-StarkRegValue {
 }
 
 function Backup-StarkFile {
-    <# Salva una copia di un file (o registra che non esisteva) prima di sovrascriverlo. #>
-    param([Parameter(Mandatory)][string]$Target)
+    <#
+        Salva una copia di un file (o registra che non esisteva) prima di sovrascriverlo.
+        -Leftover: il file e' un residuo di Stark HUD stesso (es. font in attesa di cancellazione): non va salvato.
+    #>
+    param([Parameter(Mandatory)][string]$Target, [switch]$Leftover)
     $s = Get-StarkState
     foreach ($e in $s.files) { if ($e.target -eq $Target) { return } }
     $entry = [ordered]@{ target = $Target; backup = $null; isDir = $false }
-    if (Test-Path -LiteralPath $Target) {
+    if (-not $Leftover -and (Test-Path -LiteralPath $Target)) {
         $item = Get-Item -LiteralPath $Target -Force
         $dest = Join-Path $script:StateDir ('files\{0}-{1}' -f ([guid]::NewGuid().ToString('N').Substring(0, 8)), $item.Name)
         New-Item -ItemType Directory -Path (Split-Path $dest) -Force | Out-Null
@@ -792,6 +795,31 @@ function Copy-StarkAssets {
     $dst
 }
 
+function Get-StarkPendingDeleteName {
+    param([Parameter(Mandatory)][string]$Path)
+    'StarkHUD-' + [IO.Path]::GetFileNameWithoutExtension($Path)
+}
+
+function Register-StarkPendingDelete {
+    <# Cancella il file al prossimo accesso (HKCU RunOnce): serve per i file tenuti aperti da Windows. #>
+    param([Parameter(Mandatory)][string]$Path)
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\RunOnce')
+    try { $key.SetValue((Get-StarkPendingDeleteName $Path), ('cmd.exe /c del /f /q "{0}"' -f $Path)) } finally { $key.Close() }
+}
+
+function Clear-StarkPendingDelete {
+    <# Annulla una cancellazione rimandata. Vero se ce n'era una (il file e' allora un residuo di Stark HUD). #>
+    param([Parameter(Mandatory)][string]$Path)
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\RunOnce', $true)
+    if (-not $key) { return $false }
+    try {
+        $name = Get-StarkPendingDeleteName $Path
+        if ($key.GetValueNames() -notcontains $name) { return $false }
+        $key.DeleteValue($name, $false)
+        $true
+    } finally { $key.Close() }
+}
+
 function Install-StarkFonts {
     param([string]$AssetRoot)
     Initialize-StarkNative
@@ -800,7 +828,9 @@ function Install-StarkFonts {
     foreach ($file in $script:Fonts.Keys) {
         $src = Join-Path $AssetRoot "fonts\$file"
         $dst = Join-Path $fontDir $file
-        Backup-StarkFile -Target $dst
+        # font lasciato da un ripristino precedente e ancora da cancellare: torna in uso, la cancellazione si annulla
+        $leftover = Clear-StarkPendingDelete -Path $dst
+        Backup-StarkFile -Target $dst -Leftover:$leftover
         if (-not (Test-Path -LiteralPath $dst)) { Copy-Item -LiteralPath $src -Destination $dst -Force }
         Set-StarkRegValue -Path 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts' -Name $script:Fonts[$file] -Value $dst -Type String
         [void][StarkHUD.Native]::AddFontResource($dst)
@@ -1487,20 +1517,26 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
         [void](Set-StarkDesktopIcons -Visible ([bool]$icons))
     }
 
-    # font rimasti bloccati: non sono piu' registrati, quindi Esplora risorse appena riavviato non li riapre
+    # font rimasti bloccati: non sono piu' registrati, quindi Esplora risorse appena riavviato non li riapre.
+    # La cache dei font di Windows (un servizio di sistema, che il pack non tocca) puo' tenerli aperti fino al
+    # prossimo accesso: in quel caso i file si cancellano allora. Il font e' gia' disinstallato.
     $fontDeadline = (Get-Date).AddSeconds(10)
+    $deferred = New-Object System.Collections.Generic.List[string]
+    $holders = New-Object System.Collections.Generic.List[string]
     foreach ($f in $pendingFonts) {
         if (Remove-StarkFontFile -Entry $f -Until $fontDeadline) { continue }
         $name = [IO.Path]::GetFileName($f.target)
-        $who = @(Get-StarkFileLocker -Path $f.target)
-        $why = if ($who.Count) { 'aperto da ' + ($who -join ', ') } else { 'file bloccato' }
+        foreach ($who in @(Get-StarkFileLocker -Path $f.target)) { if (-not $holders.Contains($who)) { $holders.Add($who) } }
         if ($f.backup) {
-            Write-StarkLog "Font $name non ripristinato ($why)." 'warn'
+            Write-StarkLog "Font $name non ripristinato: il file e' ancora aperto." 'warn'
             continue
         }
-        $runOnce = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\RunOnce')
-        try { $runOnce.SetValue('StarkHUD-' + [IO.Path]::GetFileNameWithoutExtension($f.target), ('cmd.exe /c del /f /q "{0}"' -f $f.target)) } finally { $runOnce.Close() }
-        Write-StarkLog "Font $name in uso ($why): verra' eliminato al prossimo accesso." 'info'
+        Register-StarkPendingDelete -Path $f.target
+        $deferred.Add($name)
+    }
+    if ($deferred.Count) {
+        $by = if ($holders.Count) { ' da ' + ($holders -join ', ') } else { '' }
+        Write-StarkLog ("Font disinstallati. {0} file ancora aperti{1}: verranno eliminati al prossimo accesso ({2})." -f $deferred.Count, $by, ($deferred -join ', ')) 'info'
     }
 
     # 9) si aspetta che Windows abbia riallineato il colore delle finestre (DWM),

@@ -313,7 +313,13 @@ if ($isWin11Base) {
     $diag.Add("Base Windows 11: colore bordi riallineato da Windows = $dwmBack, utente avvisato = $told")
     Check ($dwmBack -or $told) 'Colore dei bordi riallineato, o utente avvisato con le istruzioni'
 }
-Check (-not (Test-Path (Join-Path $fontDir 'Rajdhani-Light.ttf'))) 'Font rimossi'
+# Il servizio cache dei font di Windows puo' tenere aperti i file: allora devono essere disinstallati
+# (registro, gia' confrontato sopra) e programmati per la cancellazione al prossimo accesso
+$runOnce = 'Software\Microsoft\Windows\CurrentVersion\RunOnce'
+$fontsLeft = @(Get-ChildItem (Join-Path $root 'theme\fonts') -Filter *.ttf | Where-Object { Test-Path (Join-Path $fontDir $_.Name) })
+$fontsLost = @($fontsLeft | Where-Object { (Get-RegValue $runOnce ('StarkHUD-' + $_.BaseName)) -notlike "*$($_.Name)*" })
+$diag.Add("Font da cancellare al prossimo accesso: $($fontsLeft.Count)")
+Check ($fontsLost.Count -eq 0) 'Font rimossi o programmati per la cancellazione al prossimo accesso' ($fontsLost.Name -join ', ')
 Check (-not (Test-Path $themeFile)) 'File tema rimosso'
 Check (-not (Test-Path (Join-Path $startup 'Stark HUD - suono di avvio.lnk'))) 'Collegamento di avvio rimosso'
 Check (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'StarkHUD\state'))) 'Backup archiviato'
