@@ -845,12 +845,11 @@ function Install-StarkTheme {
     Set-StarkRegValue -Path $accent -Name 'AccentPalette' -Value (Get-StarkAccentPalette -Hex $script:AccentHex) -Type Binary
     Set-StarkRegValue -Path $accent -Name 'AccentColorMenu' -Value (Get-StarkAbgr -Hex $script:AccentHex) -Type DWord
     Set-StarkRegValue -Path $accent -Name 'StartColorMenu' -Value (Get-StarkAbgr -Hex '#00546F') -Type DWord
+    # Il colore di bordi e barre del titolo appartiene a DWM (il compositore grafico): non lo tocchiamo.
+    # Ne salviamo solo i valori, per verificare al ripristino che siano rimasti quelli originali.
     $dwm = 'HKCU:\Software\Microsoft\Windows\DWM'
-    Set-StarkRegValue -Path $dwm -Name 'AccentColor' -Value (Get-StarkAbgr -Hex $script:AccentHex) -Type DWord
-    Set-StarkRegValue -Path $dwm -Name 'ColorizationColor' -Value (Get-StarkArgb -Hex $script:AccentHex) -Type DWord
-    Set-StarkRegValue -Path $dwm -Name 'ColorizationAfterglow' -Value (Get-StarkArgb -Hex $script:AccentHex) -Type DWord
+    foreach ($n in 'AccentColor', 'ColorizationColor', 'ColorizationAfterglow') { Backup-StarkRegValue -Path $dwm -Name $n }
     Set-StarkRegValue -Path $dwm -Name 'ColorPrevalence' -Value 0 -Type DWord
-    [void](Set-StarkDwmColor -Color (Get-StarkArgb -Hex $script:AccentHex))
 
     # File .theme "Stark HUD": compare in Impostazioni > Temi per riselezionarlo in futuro.
     # Non viene applicato con un doppio clic simulato: Windows lo applicherebbe in modo asincrono,
@@ -1400,8 +1399,13 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
     $dwmColor = $s.registry | Where-Object { $_.path -eq 'HKCU:\Software\Microsoft\Windows\DWM' -and $_.name -eq 'ColorizationColor' } | Select-Object -First 1
     $dwmGlow = $s.registry | Where-Object { $_.path -eq 'HKCU:\Software\Microsoft\Windows\DWM' -and $_.name -eq 'ColorizationAfterglow' } | Select-Object -First 1
     if ($dwmColor -and $dwmColor.existed) {
-        $glow = if ($dwmGlow -and $dwmGlow.existed) { ConvertTo-StarkUInt32 $dwmGlow.value } else { ConvertTo-StarkUInt32 $dwmColor.value }
-        [void](Set-StarkDwmColor -Color (ConvertTo-StarkUInt32 $dwmColor.value) -Afterglow $glow)
+        $want = ConvertTo-StarkUInt32 $dwmColor.value
+        $now = Get-StarkDwmColor
+        if ($null -ne $now -and ($now -band 0x00FFFFFF) -ne ($want -band 0x00FFFFFF)) {
+            $glow = if ($dwmGlow -and $dwmGlow.existed) { ConvertTo-StarkUInt32 $dwmGlow.value } else { $want }
+            $ok = Set-StarkDwmColor -Color $want -Afterglow $glow
+            Write-StarkLog ('Colore finestre riportato all''originale 0x{0:X8} (DWM: {1}).' -f $want, $(if ($ok) { 'ok' } else { 'API non disponibile' })) 'info'
+        }
     }
     $icons = Get-StarkExtra 'desktopIconsVisible'
     if ($null -ne $icons) {

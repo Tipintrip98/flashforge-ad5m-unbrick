@@ -162,6 +162,8 @@ catch { Check $false 'XAML Flow Launcher ben formato' $_.Exception.Message }
 # =====================================================================================
 Section '2. Fotografia del registro'
 $before = @(Get-RegSnapshot)
+$diag = New-Object System.Collections.Generic.List[string]
+$diag.Add(('DWM prima: memoria 0x{0:X8}, registro 0x{1:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor')))
 $before | Set-Content (Join-Path $OutDir 'registry-before.txt') -Encoding UTF8
 Write-Host "Valori registrati: $($before.Count)"
 
@@ -197,8 +199,8 @@ Check ((Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Themes\Personali
 Check ((Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize' 'EnableTransparency') -eq 1) 'Trasparenze'
 $pal = Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentPalette'
 Check ($pal -is [byte[]] -and $pal.Length -eq 32) 'Tavolozza accento 32 byte'
-Check ((Get-RegValue 'Software\Microsoft\Windows\DWM' 'AccentColor') -eq -3697152) 'AccentColor ABGR ciano'
-Write-Host ('    DWM in memoria dopo l''installazione: 0x{0:X8}' -f (Get-StarkDwmColor))
+Check ((Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentColorMenu') -eq -3697152) 'AccentColorMenu ABGR ciano'
+$diag.Add(('DWM dopo installazione: memoria 0x{0:X8}, registro 0x{1:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor')))
 $themeFile = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Themes\StarkHUD.theme'
 Check (Test-Path $themeFile) 'File StarkHUD.theme creato'
 if (Test-Path $themeFile) {
@@ -274,9 +276,10 @@ $installErrors.Clear()
 $t = Measure-Command { Restore-StarkHUD -RemoveApps:$Components }
 Write-Host ("Durata ripristino: {0:N0} s" -f $t.TotalSeconds)
 Check ($installErrors.Count -eq 0) 'Ripristino senza errori' ($installErrors -join ' | ')
-Write-Host ('    DWM in memoria dopo il ripristino: 0x{0:X8}' -f (Get-StarkDwmColor))
+$diag.Add(('DWM subito dopo il ripristino: memoria 0x{0:X8}, registro 0x{1:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor')))
 Start-Sleep -Seconds 5  # lascia a DWM ed Esplora risorse il tempo di salvare il loro stato
 $after = @(Get-RegSnapshot)
+$diag.Add(('DWM 5 s dopo il ripristino: memoria 0x{0:X8}, registro 0x{1:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor')))
 $after | Set-Content (Join-Path $OutDir 'registry-after.txt') -Encoding UTF8
 $diff = @(Compare-Object -ReferenceObject $before -DifferenceObject $after)
 foreach ($d in $diff) { Write-Host ("    {0} {1}" -f $(if ($d.SideIndicator -eq '<=') { 'PRIMA ' } else { 'DOPO  ' }), $d.InputObject) -ForegroundColor Yellow }
@@ -331,4 +334,6 @@ Section 'Risultato'
 Copy-Item -Path (Join-Path $env:LOCALAPPDATA 'StarkHUD\logs\*') -Destination $OutDir -ErrorAction SilentlyContinue
 Write-Host ("{0} ok, {1} falliti" -f $script:pass, $script:fail) -ForegroundColor $(if ($script:fail) { 'Red' } else { 'Green' })
 foreach ($f in $script:failures) { Write-Host " - $f" -ForegroundColor Red }
+Write-Host 'Diagnostica:'
+foreach ($d in $diag) { Write-Host "   $d" }
 exit $script:fail
