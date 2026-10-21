@@ -162,6 +162,13 @@ catch { Check $false 'XAML Flow Launcher ben formato' $_.Exception.Message }
 
 # =====================================================================================
 Section '2. Fotografia del registro'
+# Come su un PC reale si parte con il desktop di Esplora risorse attivo: sui runner appena avviati
+# a volte non c'e' ancora, e senza di lui font e colori si comportano diversamente
+if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
+$deadline = (Get-Date).AddSeconds(60)
+while ((Get-StarkDesktopView) -eq [IntPtr]::Zero -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 1 }
+Check ((Get-StarkDesktopView) -ne [IntPtr]::Zero) 'Desktop di Esplora risorse attivo'
+Start-Sleep -Seconds 10  # Esplora risorse appena avviato scrive le sue impostazioni: si aspetta prima della fotografia
 $before = @(Get-RegSnapshot)
 $diag = New-Object System.Collections.Generic.List[string]
 $diag.Add(('DWM prima: memoria 0x{0:X8}, registro 0x{1:X8}, accento 0x{2:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor'), (Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentColorMenu')))

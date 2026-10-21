@@ -1328,6 +1328,20 @@ function Restore-StarkRegistryValues {
     $fixed
 }
 
+function Remove-StarkFontFile {
+    <# Elimina un font installato da Stark HUD e rimette l'eventuale copia originale. Falso se resta bloccato. #>
+    param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][datetime]$Until)
+    while (Test-Path -LiteralPath $Entry.target) {
+        try { Remove-Item -LiteralPath $Entry.target -Force -ErrorAction Stop }
+        catch {
+            if ((Get-Date) -ge $Until) { return $false }
+            [void][StarkHUD.Native]::RemoveFontResource($Entry.target); Send-StarkFontChange; Start-Sleep -Milliseconds 500
+        }
+    }
+    if ($Entry.backup -and (Test-Path -LiteralPath $Entry.backup)) { Copy-Item -LiteralPath $Entry.backup -Destination $Entry.target -Force }
+    $true
+}
+
 function Wait-StarkDwmSync {
     <# Attende che il colore delle finestre (DWM) torni a quello salvato nel backup. #>
     param([Parameter(Mandatory)]$State, [int]$TimeoutSec = 45)
@@ -1404,36 +1418,23 @@ function Restore-StarkHUD {
 
     # 5) file: ripristina le copie, elimina quelli creati da Stark HUD
     Write-StarkLog 'Ripristino dei file...' 'info' 60
-    # la cache dei font di Windows puo' tenere aperto un file per qualche secondo: 10 s in tutto, non per font
-    $fontDeadline = (Get-Date).AddSeconds(10)
+    # un font puo' restare aperto per qualche secondo (cache dei font, Esplora risorse):
+    # quelli bloccati si riprovano dopo il riavvio di Esplora risorse, piu' sotto
+    $pendingFonts = New-Object System.Collections.Generic.List[object]
+    $fontDeadline = (Get-Date).AddSeconds(3)
     for ($i = $s.files.Count - 1; $i -ge 0; $i--) {
         $f = $s.files[$i]
+        if ($f.target.StartsWith($fontDir, [StringComparison]::OrdinalIgnoreCase)) {
+            if (-not (Remove-StarkFontFile -Entry $f -Until $fontDeadline)) { $pendingFonts.Add($f) }
+            continue
+        }
         try {
-            if ($f.target.StartsWith($fontDir, [StringComparison]::OrdinalIgnoreCase)) {
-                while (Test-Path -LiteralPath $f.target) {
-                    try { Remove-Item -LiteralPath $f.target -Force -ErrorAction Stop }
-                    catch {
-                        if ((Get-Date) -ge $fontDeadline) { break }
-                        [void][StarkHUD.Native]::RemoveFontResource($f.target); Send-StarkFontChange; Start-Sleep -Seconds 1
-                    }
-                }
-            }
             if (Test-Path -LiteralPath $f.target) { Remove-Item -LiteralPath $f.target -Recurse -Force -ErrorAction Stop }
             if ($f.backup -and (Test-Path -LiteralPath $f.backup)) {
                 Copy-Item -LiteralPath $f.backup -Destination $f.target -Recurse -Force
             }
         } catch {
-            if ($f.target.StartsWith($fontDir, [StringComparison]::OrdinalIgnoreCase) -and -not $f.backup) {
-                # font ancora aperto da un'app: verra' eliminato al prossimo accesso
-                $runOnce = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\RunOnce')
-                try { $runOnce.SetValue('StarkHUD-' + [IO.Path]::GetFileNameWithoutExtension($f.target), ('cmd.exe /c del /f /q "{0}"' -f $f.target)) } finally { $runOnce.Close() }
-                $why = $_.Exception.Message
-                $who = @(Get-StarkFileLocker -Path $f.target)
-                if ($who.Count) { $why = 'aperto da ' + ($who -join ', ') }
-                Write-StarkLog "Font $([IO.Path]::GetFileName($f.target)) in uso ($why): verra' eliminato al prossimo accesso." 'info'
-            } else {
-                Write-StarkLog "File $($f.target) non ripristinato: $($_.Exception.Message)" 'warn'
-            }
+            Write-StarkLog "File $($f.target) non ripristinato: $($_.Exception.Message)" 'warn'
         }
     }
 
@@ -1484,6 +1485,22 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
     if ($null -ne $icons) {
         Start-Sleep -Seconds 2  # il desktop di Esplora risorse appena riavviato deve essere pronto
         [void](Set-StarkDesktopIcons -Visible ([bool]$icons))
+    }
+
+    # font rimasti bloccati: non sono piu' registrati, quindi Esplora risorse appena riavviato non li riapre
+    $fontDeadline = (Get-Date).AddSeconds(10)
+    foreach ($f in $pendingFonts) {
+        if (Remove-StarkFontFile -Entry $f -Until $fontDeadline) { continue }
+        $name = [IO.Path]::GetFileName($f.target)
+        $who = @(Get-StarkFileLocker -Path $f.target)
+        $why = if ($who.Count) { 'aperto da ' + ($who -join ', ') } else { 'file bloccato' }
+        if ($f.backup) {
+            Write-StarkLog "Font $name non ripristinato ($why)." 'warn'
+            continue
+        }
+        $runOnce = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\RunOnce')
+        try { $runOnce.SetValue('StarkHUD-' + [IO.Path]::GetFileNameWithoutExtension($f.target), ('cmd.exe /c del /f /q "{0}"' -f $f.target)) } finally { $runOnce.Close() }
+        Write-StarkLog "Font $name in uso ($why): verra' eliminato al prossimo accesso." 'info'
     }
 
     # 9) si aspetta che Windows abbia riallineato il colore delle finestre (DWM),
