@@ -46,6 +46,10 @@ jobs:
           & .\tests\Test-StarkWindows.ps1 -Components:$components
           exit $LASTEXITCODE
 
+      - name: Diagnostica colore finestre (DWM)
+        if: always()
+        run: .\tests\Diag-DwmSync.ps1
+
       - name: Log e screenshot
         if: always()
         uses: actions/upload-artifact@v4
