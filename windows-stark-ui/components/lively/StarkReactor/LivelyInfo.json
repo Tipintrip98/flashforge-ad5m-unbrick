@@ -1,0 +1,17 @@
+{
+  "AppVersion": "1.0.0.0",
+  "Title": "Stark HUD - Arc Reactor",
+  "Thumbnail": "thumbnail.jpg",
+  "Preview": null,
+  "Desc": "Reattore HUD animato in stile Stark: anelli in rotazione via GPU, telemetria CPU/RAM/GPU/rete, scheda Now Playing. Ottimizzato: un solo loop JS limitato a FPS configurabili.",
+  "Author": "Stark HUD UI Pack (fan made)",
+  "License": "MIT",
+  "Contact": "https://github.com/tipintrip98/flashforge-ad5m-unbrick",
+  "Type": 1,
+  "FileName": "index.html",
+  "Arguments": "--system-information --system-nowplaying --pause-event",
+  "IsAbsolutePath": false,
+  "Id": null,
+  "Tags": ["hud", "stark", "reactor", "futuristic"],
+  "Version": 0
+}

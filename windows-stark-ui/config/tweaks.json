@@ -1,0 +1,189 @@
+{
+  "_comment": "Ottimizzazioni Stark HUD. Solo HKCU (utente corrente): niente servizi, niente driver, niente file di sistema. Ogni valore viene salvato prima della modifica e ripristinato con 'Ripristina'.",
+  "tweaks": [
+    {
+      "id": "menu-delay",
+      "group": "Fluidità",
+      "title": "Menu più reattivi",
+      "desc": "Ritardo di apertura dei sottomenu da 400 a 120 ms. Le animazioni restano attive.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\Control Panel\\Desktop", "name": "MenuShowDelay", "type": "String", "value": "120" }
+      ]
+    },
+    {
+      "id": "startup-delay",
+      "group": "Fluidità",
+      "title": "Avvio desktop senza attesa",
+      "desc": "Rimuove il ritardo artificiale con cui Esplora risorse avvia le app di avvio automatico.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Serialize", "name": "StartupDelayInMSec", "type": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "cleartype",
+      "group": "Fluidità",
+      "title": "Testo nitido (ClearType)",
+      "desc": "Attiva la levigatura dei caratteri ClearType per un testo più pulito, stile Apple.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\Control Panel\\Desktop", "name": "FontSmoothing", "type": "String", "value": "2" },
+        { "path": "HKCU:\\Control Panel\\Desktop", "name": "FontSmoothingType", "type": "DWord", "value": 2 }
+      ]
+    },
+    {
+      "id": "game-mode",
+      "group": "Prestazioni",
+      "title": "Modalità gioco automatica",
+      "desc": "Windows dà priorità a giochi e app a schermo intero.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\GameBar", "name": "AutoGameModeEnabled", "type": "DWord", "value": 1 },
+        { "path": "HKCU:\\Software\\Microsoft\\GameBar", "name": "AllowAutoGameMode", "type": "DWord", "value": 1 }
+      ]
+    },
+    {
+      "id": "no-gamedvr",
+      "group": "Prestazioni",
+      "title": "Disattiva registrazione in background (Game DVR)",
+      "desc": "Niente cattura video continua di Xbox Game Bar: meno carico su GPU e disco. La Game Bar resta disponibile.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\System\\GameConfigStore", "name": "GameDVR_Enabled", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\GameDVR", "name": "AppCaptureEnabled", "type": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "background-apps",
+      "group": "Prestazioni",
+      "title": "Blocca app Store in background",
+      "desc": "Le app dello Store non girano quando sono chiuse. Attenzione: alcune (es. Posta) non mostreranno notifiche finché non le apri.",
+      "default": false,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\BackgroundAccessApplications", "name": "GlobalUserDisabled", "type": "DWord", "value": 1 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search", "name": "BackgroundAppGlobalToggle", "type": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "power-high",
+      "group": "Prestazioni",
+      "title": "Piano energetico Prestazioni elevate",
+      "desc": "Solo per PC fissi o portatili sempre in carica: consuma più batteria. Il piano precedente viene ripristinato.",
+      "default": false,
+      "type": "power",
+      "scheme": "8c5e7fda-e8bf-4a96-9a85-a6e23a8c635c"
+    },
+    {
+      "id": "no-suggestions",
+      "group": "Pulizia",
+      "title": "Niente pubblicità e suggerimenti",
+      "desc": "Rimuove app suggerite nel menu Start, suggerimenti e installazioni silenziose di app promozionali.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SystemPaneSuggestionsEnabled", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-338388Enabled", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-338389Enabled", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-310093Enabled", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SubscribedContent-353698Enabled", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SilentInstalledAppsEnabled", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "SoftLandingEnabled", "type": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "lockscreen-clean",
+      "group": "Pulizia",
+      "title": "Schermata di blocco pulita",
+      "desc": "Disattiva le immagini a rotazione di Windows Spotlight e i fumetti promozionali, così resta lo sfondo Stark HUD.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "RotatingLockScreenEnabled", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\ContentDeliveryManager", "name": "RotatingLockScreenOverlayEnabled", "type": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "no-web-search",
+      "group": "Pulizia",
+      "title": "Ricerca Start solo locale",
+      "desc": "La ricerca del menu Start non invia più le digitazioni a Bing: risultati locali più rapidi.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search", "name": "BingSearchEnabled", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search", "name": "CortanaConsent", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Policies\\Microsoft\\Windows\\Explorer", "name": "DisableSearchBoxSuggestions", "type": "DWord", "value": 1 }
+      ]
+    },
+    {
+      "id": "taskbar-clean",
+      "group": "Interfaccia",
+      "title": "Barra delle applicazioni minimale",
+      "desc": "Ricerca come icona, nasconde pulsanti Visualizzazione attività, Cortana e Persone: più spazio, look stile dock.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Search", "name": "SearchboxTaskbarMode", "type": "DWord", "value": 1 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "ShowTaskViewButton", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "ShowCortanaButton", "type": "DWord", "value": 0 },
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced\\People", "name": "PeopleBand", "type": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "no-news",
+      "group": "Interfaccia",
+      "title": "Nascondi Notizie e interessi",
+      "desc": "Toglie il widget meteo/notizie dalla barra delle applicazioni (Windows 10 21H1+). Su alcune build Windows lo blocca: in quel caso viene solo segnalato.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Feeds", "name": "ShellFeedsTaskbarViewMode", "type": "DWord", "value": 2 }
+      ]
+    },
+    {
+      "id": "explorer-thispc",
+      "group": "Interfaccia",
+      "title": "Esplora file apre 'Questo PC'",
+      "desc": "Apre direttamente unità e cartelle invece di Accesso rapido.",
+      "default": true,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "LaunchTo", "type": "DWord", "value": 1 }
+      ]
+    },
+    {
+      "id": "file-ext",
+      "group": "Interfaccia",
+      "title": "Mostra estensioni dei file",
+      "desc": "Utile e più sicuro (riconosci file .exe camuffati).",
+      "default": false,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "HideFileExt", "type": "DWord", "value": 0 }
+      ]
+    },
+    {
+      "id": "hide-desktop-icons",
+      "group": "Interfaccia",
+      "title": "Desktop pulito (nascondi icone)",
+      "desc": "Look minimale stile Apple TV: le icone del desktop vengono nascoste (non cancellate).",
+      "default": false,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Advanced", "name": "HideIcons", "type": "DWord", "value": 1 }
+      ]
+    },
+    {
+      "id": "accent-titlebars",
+      "group": "Interfaccia",
+      "title": "Barre del titolo color reattore",
+      "desc": "Colora barre del titolo e bordi delle finestre con il ciano Stark (di default restano grafite).",
+      "default": false,
+      "registry": [
+        { "path": "HKCU:\\Software\\Microsoft\\Windows\\DWM", "name": "ColorPrevalence", "type": "DWord", "value": 1 }
+      ]
+    },
+    {
+      "id": "temp-clean",
+      "group": "Pulizia",
+      "title": "Pulizia file temporanei",
+      "desc": "Elimina i file temporanei dell'utente più vecchi di 3 giorni (quelli in uso vengono saltati).",
+      "default": true,
+      "type": "cleanup",
+      "olderThanDays": 3
+    }
+  ]
+}

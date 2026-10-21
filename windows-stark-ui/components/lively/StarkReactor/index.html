@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stark HUD - Arc Reactor</title>
+<!--
+  Stark HUD - sfondo animato per Lively Wallpaper (o qualsiasi browser).
+  Ottimizzazione: tutti gli anelli sono disegnati UNA volta su canvas separati e
+  ruotano con animazioni CSS (solo compositor GPU, ~0% CPU). L'unico loop JS e'
+  quello delle particelle, limitato a FPS configurabili e confinato attorno al reattore.
+  Parametri URL (per il render statico): ?static=1&layout=desktop|lock&fonts=<cartella>
+-->
+<style>
+  :root {
+    --accent: #38D6FF;
+    --accent-rgb: 56, 214, 255;
+    --gold: #F2B544;
+    --text: #EAF6FF;
+    --muted: rgba(234, 246, 255, 0.55);
+    --energy: 0.6;
+  }
+  html, body {
+    margin: 0; width: 100%; height: 100%; overflow: hidden;
+    background: #04070A; color: var(--text); user-select: none;
+    font-family: 'Rajdhani', 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  canvas { position: fixed; display: block; pointer-events: none; }
+  #bg { inset: 0; width: 100%; height: 100%; }
+
+  #reactor { position: fixed; width: 0; height: 0; }
+  .ring {
+    position: absolute; left: 0; top: 0;
+    transform: translate(-50%, -50%) rotate(var(--r0, 0deg));
+    will-change: transform;
+    animation: spin linear infinite;
+  }
+  .ring.rev { animation-direction: reverse; }
+  @keyframes spin {
+    from { transform: translate(-50%, -50%) rotate(var(--r0, 0deg)); }
+    to   { transform: translate(-50%, -50%) rotate(calc(var(--r0, 0deg) + 360deg)); }
+  }
+  .static .ring, .still .ring { animation: none; }
+
+  .glow, .core {
+    position: absolute; left: 0; top: 0; border-radius: 50%;
+    transform: translate(-50%, -50%) scale(calc(0.92 + var(--energy) * 0.12));
+    transition: transform 0.35s ease-out, opacity 0.35s ease-out;
+    will-change: transform, opacity;
+  }
+  .glow {
+    background: radial-gradient(closest-side, rgba(var(--accent-rgb), 0.30), rgba(var(--accent-rgb), 0.10) 45%, rgba(var(--accent-rgb), 0) 100%);
+    opacity: calc(0.55 + var(--energy) * 0.45);
+  }
+  .core {
+    background: radial-gradient(closest-side, #FFFFFF 0%, #DFF9FF 22%, rgba(var(--accent-rgb), 0.85) 48%, rgba(var(--accent-rgb), 0.18) 78%, rgba(var(--accent-rgb), 0) 100%);
+    opacity: calc(0.75 + var(--energy) * 0.25);
+  }
+  .breathe .core { animation: breathe 5.5s ease-in-out infinite alternate; }
+  @keyframes breathe { from { filter: brightness(0.92); } to { filter: brightness(1.12); } }
+
+  /* --- HUD testuale ---------------------------------------------------- */
+  .mono { font-family: 'Share Tech Mono', Consolas, monospace; letter-spacing: 0.14em; }
+  .callout { position: fixed; font-size: 1.32vmin; color: var(--muted); white-space: nowrap; line-height: 1.55; }
+  .callout b { color: var(--accent); font-weight: 400; }
+  .callout .gold { color: var(--gold); }
+  .callout .dot { display: inline-block; width: 0.7vmin; height: 0.7vmin; border-radius: 50%; background: var(--accent);
+                  box-shadow: 0 0 1vmin var(--accent); margin-right: 0.8vmin; vertical-align: 0.1vmin; }
+
+  #clock { position: fixed; left: 7vw; top: 50%; transform: translateY(-50%); display: none; }
+  #clock .tag { font-size: 1.35vmin; color: var(--muted); }
+  #clock .time { font-weight: 300; font-size: 15vmin; line-height: 0.95; letter-spacing: -0.01em; margin: 0.6vmin 0 0.4vmin -0.5vmin; }
+  #clock .date { font-weight: 500; font-size: 2.3vmin; letter-spacing: 0.34em; color: var(--accent); text-transform: uppercase; }
+
+  #np {
+    position: fixed; right: 4vw; bottom: 11vh; width: 36vmin; padding: 1.6vmin; box-sizing: border-box;
+    display: flex; gap: 1.6vmin; align-items: center;
+    background: linear-gradient(180deg, rgba(20, 30, 40, 0.62), rgba(10, 16, 22, 0.72));
+    border: 1px solid rgba(var(--accent-rgb), 0.18); border-radius: 2.4vmin;
+    box-shadow: 0 2vmin 5vmin rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    opacity: 0; transform: translateY(1.5vmin); transition: opacity 0.6s ease, transform 0.6s cubic-bezier(.2, .8, .2, 1);
+  }
+  #np.on { opacity: 1; transform: none; }
+  #np img { width: 9vmin; height: 9vmin; border-radius: 1.4vmin; object-fit: cover; background: rgba(var(--accent-rgb), 0.12); flex: none; }
+  #np .meta { min-width: 0; }
+  #np .lbl { font-size: 1.15vmin; color: var(--accent); }
+  #np .title { font-weight: 600; font-size: 2.4vmin; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-top: 0.3vmin; }
+  #np .artist { font-weight: 500; font-size: 1.8vmin; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div id="reactor"></div>
+<canvas id="fx"></canvas>
+
+<div class="callout mono" id="c1">
+  <div><span class="dot"></span><b>ARC CORE</b> // ONLINE</div>
+  <div id="c1a">OUTPUT 3.00 GJ/s</div>
+  <div id="c1b">STATUS <span class="gold">NOMINAL</span></div>
+</div>
+<div class="callout mono" id="c2">
+  <div><b>HUD</b> // MK-I</div>
+  <div id="c2a">THERMAL 31.4 C</div>
+  <div id="c2b">LINK SECURE</div>
+</div>
+
+<div id="clock">
+  <div class="tag mono" id="ctag">LOCAL TIME</div>
+  <div class="time" id="ctime">--:--</div>
+  <div class="date" id="cdate"></div>
+</div>
+
+<div id="np">
+  <img id="npArt" alt="">
+  <div class="meta">
+    <div class="lbl mono">NOW PLAYING</div>
+    <div class="title" id="npTitle"></div>
+    <div class="artist" id="npArtist"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const Q = new URLSearchParams(location.search);
+const STATIC = Q.has('static');
+const LAYOUT = Q.get('layout') || 'desktop';
+const FONT_DIR = Q.get('fonts') || 'fonts/';
+
+const cfg = {
+  accent: '#38D6FF', gold: '#F2B544', position: 0, scale: 100, speed: 100,
+  particles: 60, fps: 1, showClock: false, clock24: true, showTelemetry: true,
+  showNowPlaying: true, reduceMotion: false, frame: true,
+};
+const FPS_STEPS = [24, 30, 60];
+
+// ------------------------------------------------------------------ util
+const $ = (id) => document.getElementById(id);
+function rgb(hex) {
+  const h = String(hex).replace('#', '').slice(-6);
+  const n = parseInt(h.length === 3 ? h.split('').map((c) => c + c).join('') : h, 16) || 0;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+const rgba = (hex, a) => `rgba(${rgb(hex).join(',')},${a})`;
+let seed = 7;
+const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+const TAU = Math.PI * 2;
+const deg = (d) => (d * Math.PI) / 180;
+
+// ------------------------------------------------------------------ font
+async function loadFonts() {
+  const faces = [
+    ['Rajdhani', 'Rajdhani Light', 'Rajdhani-Light.ttf', '300'],
+    ['Rajdhani', 'Rajdhani Medium', 'Rajdhani-Medium.ttf', '500'],
+    ['Rajdhani', 'Rajdhani SemiBold', 'Rajdhani-SemiBold.ttf', '600'],
+    ['Share Tech Mono', 'Share Tech Mono', 'ShareTechMono-Regular.ttf', '400'],
+  ];
+  await Promise.all(faces.map(async ([family, local, file, weight]) => {
+    try {
+      const f = new FontFace(family, `local('${local}'), url('${FONT_DIR}${file}')`, { weight });
+      document.fonts.add(await f.load());
+    } catch (e) { /* fallback: Segoe UI / Consolas */ }
+  }));
+}
+
+// ------------------------------------------------------------------ scena
+let W, H, DPR, R, cx, cy;
+const reactor = $('reactor');
+const bg = $('bg');
+const fx = $('fx');
+
+function measure() {
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  const lock = LAYOUT === 'lock';
+  R = Math.min(W, H) * 0.34 * (cfg.scale / 100) * (lock ? 1.08 : 1);
+  const px = lock ? 0.5 : [0.68, 0.5, 0.32][cfg.position] ?? 0.68;
+  cx = W * px; cy = H * (lock ? 0.45 : 0.5);
+  const root = document.documentElement.style;
+  root.setProperty('--accent', cfg.accent);
+  root.setProperty('--accent-rgb', rgb(cfg.accent).join(','));
+  root.setProperty('--gold', cfg.gold);
+  reactor.style.left = cx + 'px';
+  reactor.style.top = cy + 'px';
+}
+
+function drawBackground() {
+  bg.width = Math.round(W * DPR); bg.height = Math.round(H * DPR);
+  const g = bg.getContext('2d');
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const far = Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy));
+  const base = g.createRadialGradient(cx, cy, 0, cx, cy, far);
+  const [r, gg, b] = rgb(cfg.accent);
+  base.addColorStop(0, `rgb(${10 + r * 0.04},${18 + gg * 0.05},${24 + b * 0.06})`);
+  base.addColorStop(0.35, '#081017');
+  base.addColorStop(0.75, '#05090D');
+  base.addColorStop(1, '#030507');
+  g.fillStyle = base; g.fillRect(0, 0, W, H);
+
+  // griglia "blueprint" che sfuma lontano dal reattore
+  const grid = document.createElement('canvas');
+  grid.width = bg.width; grid.height = bg.height;
+  const q = grid.getContext('2d');
+  q.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const step = Math.max(28, Math.round(R / 6));
+  q.strokeStyle = rgba(cfg.accent, 0.09); q.lineWidth = 1 / DPR;
+  q.beginPath();
+  for (let x = cx % step; x < W; x += step) { q.moveTo(x, 0); q.lineTo(x, H); }
+  for (let y = cy % step; y < H; y += step) { q.moveTo(0, y); q.lineTo(W, y); }
+  q.stroke();
+  q.fillStyle = rgba(cfg.accent, 0.22);
+  for (let x = cx % (step * 4); x < W; x += step * 4)
+    for (let y = cy % (step * 4); y < H; y += step * 4) q.fillRect(x - 1.5, y - 0.25, 3, 0.5), q.fillRect(x - 0.25, y - 1.5, 0.5, 3);
+  q.globalCompositeOperation = 'destination-in';
+  const mask = q.createRadialGradient(cx, cy, R * 0.6, cx, cy, R * 3.2);
+  mask.addColorStop(0, 'rgba(0,0,0,0.85)'); mask.addColorStop(1, 'rgba(0,0,0,0)');
+  q.fillStyle = mask; q.fillRect(0, 0, W, H);
+  g.drawImage(grid, 0, 0, W, H);
+
+  // linee d'orizzonte sottili
+  g.strokeStyle = rgba(cfg.accent, 0.07); g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, cy + 0.5); g.lineTo(W, cy + 0.5); g.stroke();
+
+  // cornici HUD agli angoli
+  if (cfg.frame) {
+    const m = Math.min(W, H) * 0.035, L = Math.min(W, H) * 0.06;
+    g.strokeStyle = rgba(cfg.accent, 0.28); g.lineWidth = 1.2;
+    [[m, m, 1, 1], [W - m, m, -1, 1], [m, H - m, 1, -1], [W - m, H - m, -1, -1]].forEach(([x, y, sx, sy]) => {
+      g.beginPath(); g.moveTo(x + L * sx, y); g.lineTo(x, y); g.lineTo(x, y + L * sy); g.stroke();
+    });
+  }
+
+  // vignettatura
+  const vig = g.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.hypot(W, H) * 0.62);
+  vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,0.55)');
+  g.fillStyle = vig; g.fillRect(0, 0, W, H);
+
+  // grana finissima: evita il banding dei gradienti scuri
+  const n = document.createElement('canvas'); n.width = n.height = 192;
+  const nc = n.getContext('2d'); const id = nc.createImageData(192, 192);
+  seed = 99;
+  for (let i = 0; i < id.data.length; i += 4) { const v = rand() * 255; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = 10; }
+  nc.putImageData(id, 0, 0);
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.fillStyle = g.createPattern(n, 'repeat'); g.fillRect(0, 0, bg.width, bg.height);
+}
+
+// Ogni anello: canvas quadrato centrato sul reattore, ruotato via CSS.
+function ringCanvas(radius, draw) {
+  const half = radius + R * 0.08;
+  const c = document.createElement('canvas');
+  c.width = c.height = Math.ceil(half * 2 * DPR);
+  c.style.width = c.style.height = half * 2 + 'px';
+  const g = c.getContext('2d');
+  g.setTransform(DPR, 0, 0, DPR, half * DPR, half * DPR);
+  g.lineCap = 'round';
+  draw(g);
+  c.className = 'ring';
+  return c;
+}
+
+function arc(g, r, a0, a1, w, color) {
+  g.beginPath(); g.arc(0, 0, r, deg(a0), deg(a1)); g.lineWidth = w; g.strokeStyle = color; g.stroke();
+}
+
+const RINGS = [
+  { // scala graduata esterna
+    period: 260, rev: false, r0: 0, make: () => ringCanvas(R * 1.24, (g) => {
+      const r = R * 1.2;
+      arc(g, r, 0, 360, 1, rgba(cfg.accent, 0.16));
+      for (let a = 0; a < 360; a += 2) {
+        const major = a % 10 === 0;
+        const len = major ? R * 0.032 : R * 0.013;
+        g.beginPath();
+        g.moveTo(Math.cos(deg(a)) * r, Math.sin(deg(a)) * r);
+        g.lineTo(Math.cos(deg(a)) * (r - len), Math.sin(deg(a)) * (r - len));
+        g.lineWidth = major ? 1.3 : 1; g.strokeStyle = rgba(cfg.accent, major ? 0.42 : 0.2); g.stroke();
+      }
+      g.fillStyle = rgba(cfg.accent, 0.45);
+      g.font = `${Math.max(9, R * 0.03)}px 'Share Tech Mono', Consolas, monospace`;
+      g.textAlign = 'center'; g.textBaseline = 'middle';
+      for (let a = 0; a < 360; a += 30) {
+        g.save(); g.rotate(deg(a + 90)); g.fillText(String(a).padStart(3, '0'), 0, -(r - R * 0.07)); g.restore();
+      }
+    }),
+  },
+  { // archi segmentati principali
+    period: 110, rev: true, r0: 20, make: () => ringCanvas(R * 1.04, (g) => {
+      const r = R;
+      for (let k = 0; k < 3; k++) {
+        const a0 = k * 120, a1 = a0 + 72;
+        arc(g, r, a0, a1, R * 0.03, rgba(cfg.accent, 0.12));
+        arc(g, r, a0, a1, R * 0.011, rgba(cfg.accent, 0.62));
+        [a0, a1].forEach((a) => {
+          g.beginPath();
+          g.moveTo(Math.cos(deg(a)) * (r - R * 0.035), Math.sin(deg(a)) * (r - R * 0.035));
+          g.lineTo(Math.cos(deg(a)) * (r + R * 0.035), Math.sin(deg(a)) * (r + R * 0.035));
+          g.lineWidth = 1.4; g.strokeStyle = rgba(cfg.accent, 0.8); g.stroke();
+        });
+        for (let d = 0; d < 4; d++) {
+          const a = a1 + 9 + d * 7;
+          g.beginPath(); g.arc(Math.cos(deg(a)) * r, Math.sin(deg(a)) * r, R * 0.0055, 0, TAU);
+          g.fillStyle = rgba(cfg.accent, 0.5 - d * 0.1); g.fill();
+        }
+      }
+    }),
+  },
+  { // accento oro
+    period: 38, rev: false, r0: 200, make: () => ringCanvas(R * 1.1, (g) => {
+      const r = R * 1.075;
+      arc(g, r, -20, 20, R * 0.02, rgba(cfg.gold, 0.12));
+      arc(g, r, -20, 20, R * 0.008, rgba(cfg.gold, 0.9));
+      for (let d = 1; d <= 3; d++) {
+        const a = -20 - d * 6;
+        g.beginPath(); g.arc(Math.cos(deg(a)) * r, Math.sin(deg(a)) * r, R * 0.006, 0, TAU);
+        g.fillStyle = rgba(cfg.gold, 0.75 - d * 0.18); g.fill();
+      }
+    }),
+  },
+  { // anello tratteggiato
+    period: 75, rev: false, r0: 0, make: () => ringCanvas(R * 0.92, (g) => {
+      g.setLineDash([R * 0.012, R * 0.024]);
+      arc(g, R * 0.88, 0, 360, R * 0.022, rgba(cfg.accent, 0.2));
+      g.setLineDash([]);
+      arc(g, R * 0.845, 0, 360, 1, rgba(cfg.accent, 0.22));
+    }),
+  },
+  { // "bobine" del reattore
+    period: 160, rev: true, r0: 6, make: () => ringCanvas(R * 0.84, (g) => {
+      const r0 = R * 0.635, r1 = R * 0.8;
+      for (let k = 0; k < 10; k++) {
+        const a0 = deg(k * 36 + 4.5), a1 = deg(k * 36 + 31.5);
+        g.beginPath();
+        g.arc(0, 0, r1, a0, a1); g.arc(0, 0, r0, a1 - 0.02, a0 + 0.02, true); g.closePath();
+        const grd = g.createRadialGradient(0, 0, r0, 0, 0, r1);
+        grd.addColorStop(0, rgba(cfg.accent, 0.32)); grd.addColorStop(1, rgba(cfg.accent, 0.07));
+        g.fillStyle = grd; g.fill();
+        g.lineWidth = 1; g.strokeStyle = rgba(cfg.accent, 0.42); g.stroke();
+        for (let s = 1; s < 6; s++) {
+          const rr = r0 + ((r1 - r0) * s) / 6;
+          arc(g, rr, (a0 * 180) / Math.PI + 1.5, (a1 * 180) / Math.PI - 1.5, 0.8, rgba(cfg.accent, 0.16));
+        }
+      }
+      arc(g, R * 0.6, 0, 360, R * 0.01, rgba(cfg.accent, 0.5));
+    }),
+  },
+  { // anello interno + triangolo
+    period: 48, rev: false, r0: 30, make: () => ringCanvas(R * 0.56, (g) => {
+      const r = R * 0.5;
+      arc(g, r, 0, 360, 1.2, rgba(cfg.accent, 0.55));
+      g.beginPath();
+      for (let k = 0; k < 3; k++) {
+        const a = deg(-90 + k * 120);
+        g[k ? 'lineTo' : 'moveTo'](Math.cos(a) * r * 0.94, Math.sin(a) * r * 0.94);
+      }
+      g.closePath(); g.lineWidth = 1.2; g.strokeStyle = rgba(cfg.accent, 0.22); g.stroke();
+      for (let k = 0; k < 6; k++) {
+        const a = deg(k * 60);
+        g.beginPath(); g.moveTo(Math.cos(a) * r, Math.sin(a) * r); g.lineTo(Math.cos(a) * r * 1.08, Math.sin(a) * r * 1.08);
+        g.lineWidth = 2; g.strokeStyle = rgba(cfg.accent, 0.7); g.stroke();
+      }
+    }),
+  },
+];
+
+function buildReactor() {
+  reactor.innerHTML = '';
+  const glow = document.createElement('div');
+  glow.className = 'glow';
+  glow.style.width = glow.style.height = R * 2.6 + 'px';
+  reactor.appendChild(glow);
+  const speed = cfg.reduceMotion ? 0 : cfg.speed / 100;
+  seed = 42;
+  RINGS.forEach((spec) => {
+    const c = spec.make();
+    c.classList.toggle('rev', spec.rev);
+    c.style.setProperty('--r0', (STATIC ? spec.r0 + rand() * 40 : spec.r0) + 'deg');
+    if (speed > 0) c.style.animationDuration = spec.period / speed + 's';
+    else c.style.animation = 'none';
+    reactor.appendChild(c);
+  });
+  const core = document.createElement('div');
+  core.className = 'core';
+  core.style.width = core.style.height = R * 0.62 + 'px';
+  reactor.appendChild(core);
+  document.body.classList.toggle('breathe', !STATIC && !cfg.reduceMotion);
+}
+
+function placeCallouts() {
+  const c1 = $('c1'), c2 = $('c2');
+  const show = cfg.showTelemetry;
+  c1.style.display = c2.style.display = show ? 'block' : 'none';
+  if (!show) return;
+  // linee guida disegnate sul canvas di sfondo
+  const g = bg.getContext('2d');
+  g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  g.strokeStyle = rgba(cfg.accent, 0.35); g.lineWidth = 1;
+  const legs = [
+    { el: c1, a: -38, dx: 1, k: 1.32 },
+    { el: c2, a: 142, dx: -1, k: 1.32 },
+  ];
+  legs.forEach(({ el, a, dx, k }) => {
+    const sx = cx + Math.cos(deg(a)) * R * 1.22, sy = cy + Math.sin(deg(a)) * R * 1.22;
+    const mx = cx + Math.cos(deg(a)) * R * k * 1.12, my = cy + Math.sin(deg(a)) * R * k * 1.12;
+    const ex = mx + dx * R * 0.34;
+    g.beginPath(); g.moveTo(sx, sy); g.lineTo(mx, my); g.lineTo(ex, my); g.stroke();
+    g.beginPath(); g.arc(sx, sy, 2.2, 0, TAU); g.fillStyle = rgba(cfg.accent, 0.8); g.fill();
+    el.style.top = my - el.offsetHeight - 6 + 'px';
+    el.style.left = (dx > 0 ? mx + 4 : ex) + 'px';
+    el.style.textAlign = dx > 0 ? 'left' : 'right';
+    if (dx < 0) el.style.left = ex + 'px';
+    // mantieni dentro lo schermo
+    const rect = el.getBoundingClientRect();
+    if (rect.right > W - 12) el.style.left = W - rect.width - 12 + 'px';
+    if (rect.left < 12) el.style.left = '12px';
+  });
+}
+
+// ------------------------------------------------------------------ particelle
+const motes = [];
+let fxBox = 0, fxCtx = null, running = !STATIC, lastFrame = 0;
+function sizeFx() {
+  fxBox = R * 3.2;
+  fx.width = fx.height = Math.ceil(fxBox * DPR);
+  fx.style.width = fx.style.height = fxBox + 'px';
+  fx.style.left = cx - fxBox / 2 + 'px';
+  fx.style.top = cy - fxBox / 2 + 'px';
+  fxCtx = fx.getContext('2d');
+  fxCtx.setTransform(DPR, 0, 0, DPR, (fxBox / 2) * DPR, (fxBox / 2) * DPR);
+  motes.length = 0;
+  seed = 5;
+  const count = cfg.reduceMotion ? 0 : Math.round(cfg.particles);
+  for (let i = 0; i < count; i++) motes.push(newMote(true));
+}
+function newMote(anywhere) {
+  const a = rand() * TAU, d = R * (0.35 + rand() * 1.1);
+  return {
+    x: Math.cos(a) * d, y: anywhere ? Math.sin(a) * d : R * 1.5,
+    vy: -(4 + rand() * 10), vx: (rand() - 0.5) * 3,
+    s: 0.4 + rand() * 1.2, a: 0.15 + rand() * 0.55, p: rand() * TAU,
+  };
+}
+function tick(now) {
+  if (!running) return;
+  requestAnimationFrame(tick);
+  const fps = FPS_STEPS[cfg.fps] || 30;
+  if (now - lastFrame < 1000 / fps - 1) return;
+  const dt = Math.min(0.1, (now - (lastFrame || now)) / 1000);
+  lastFrame = now;
+  const g = fxCtx, half = fxBox / 2;
+  g.clearRect(-half, -half, fxBox, fxBox);
+  if (!motes.length) return;
+  const col = rgb(cfg.accent).join(',');
+  for (const m of motes) {
+    m.x += m.vx * dt; m.y += m.vy * dt; m.p += dt * 1.7;
+    if (m.y < -half || Math.abs(m.x) > half) Object.assign(m, newMote(false));
+    const alpha = m.a * (0.6 + 0.4 * Math.sin(m.p)) * Math.min(1, (half - Math.abs(m.y)) / (R * 0.4));
+    g.fillStyle = `rgba(${col},${alpha.toFixed(3)})`;
+    g.fillRect(m.x, m.y, m.s, m.s);
+  }
+}
+
+// ------------------------------------------------------------------ HUD dinamico
+const energy = { cpu: 0.25, audio: 0, value: 0.6 };
+function setEnergy() {
+  const v = Math.min(1, 0.45 + energy.cpu * 0.4 + energy.audio * 0.5);
+  energy.value += (v - energy.value) * 0.5;
+  document.documentElement.style.setProperty('--energy', energy.value.toFixed(3));
+}
+
+const LOCALE = (() => {
+  try { const l = navigator.language || 'it-IT'; new Intl.DateTimeFormat(l); return l; } catch (e) { return 'it-IT'; }
+})();
+function updateClock() {
+  const el = $('clock');
+  el.style.display = cfg.showClock && !STATIC ? 'block' : 'none';
+  if (!cfg.showClock || STATIC) return;
+  const now = new Date();
+  $('ctime').textContent = now.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit', hour12: !cfg.clock24 });
+  $('cdate').textContent = now.toLocaleDateString(LOCALE, { weekday: 'long', day: 'numeric', month: 'long' });
+  const off = -now.getTimezoneOffset() / 60;
+  $('ctag').textContent = `LOCAL TIME // UTC${off >= 0 ? '+' : ''}${off}`;
+}
+
+function rebuild() {
+  measure();
+  drawBackground();
+  buildReactor();
+  placeCallouts();
+  sizeFx();
+  updateClock();
+  $('np').style.display = cfg.showNowPlaying ? 'flex' : 'none';
+  document.body.classList.toggle('static', STATIC);
+}
+
+let resizeTimer = 0;
+window.addEventListener('resize', () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(rebuild, 200); });
+
+// ------------------------------------------------------------------ API Lively
+// Proprieta' personalizzabili (LivelyProperties.json)
+window.livelyPropertyListener = function (name, val) {
+  if (!(name in cfg)) return;
+  cfg[name] = typeof cfg[name] === 'boolean' ? Boolean(val) : (typeof cfg[name] === 'number' ? Number(val) : val);
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(rebuild, 60);
+};
+
+// Audio di sistema: il nucleo pulsa con i bassi
+window.livelyAudioListener = function (audioArray) {
+  if (!audioArray || !audioArray.length) return;
+  let sum = 0; const n = Math.min(12, audioArray.length);
+  for (let i = 0; i < n; i++) sum += audioArray[i];
+  energy.audio = Math.min(1, (sum / n) * 1.6);
+  setEnergy();
+};
+
+// Telemetria hardware (CPU/RAM/GPU/rete)
+window.livelySystemInformation = function (data) {
+  try {
+    const s = typeof data === 'string' ? JSON.parse(data) : data;
+    const cpu = Number(s.CurrentCpu ?? 0);
+    energy.cpu = Math.min(1, cpu / 100);
+    setEnergy();
+    if (!cfg.showTelemetry) return;
+    const ramFree = Number(s.CurrentRamAvail ?? 0), ramTot = Number(s.TotalRam ?? 0);
+    $('c1a').textContent = `CPU ${cpu.toFixed(0).padStart(2, '0')}%  GPU ${Number(s.CurrentGpu3D ?? 0).toFixed(0).padStart(2, '0')}%`;
+    if (ramTot > 0) $('c1b').innerHTML = `RAM <span class="gold">${(100 - (ramFree / ramTot) * 100).toFixed(0)}%</span>  IN USO`;
+    const kb = (v) => (v > 1048576 ? (v / 1048576).toFixed(1) + ' MB/s' : (v / 1024).toFixed(0) + ' KB/s');
+    $('c2a').textContent = `NET DN ${kb(Number(s.CurrentNetDown ?? 0))}`;
+    $('c2b').textContent = `NET UP ${kb(Number(s.CurrentNetUp ?? 0))}`;
+  } catch (e) { /* formato inatteso: ignora */ }
+};
+
+// Brano in riproduzione (Spotify, browser, lettori multimediali di sistema)
+window.livelyCurrentTrack = function (data) {
+  const np = $('np');
+  let t = null;
+  try { t = typeof data === 'string' ? JSON.parse(data) : data; } catch (e) { t = null; }
+  if (!t || !cfg.showNowPlaying || !(t.Title || t.Artist)) { np.classList.remove('on'); return; }
+  $('npTitle').textContent = t.Title || '';
+  $('npArtist').textContent = t.Artist || t.AlbumArtist || '';
+  const art = $('npArt');
+  if (t.Thumbnail) { art.src = 'data:image/png;base64,' + t.Thumbnail; art.style.display = 'block'; }
+  else art.style.display = 'none';
+  np.classList.add('on');
+};
+
+// Pausa quando Lively mette in pausa lo sfondo (app a schermo intero, batteria...)
+window.livelyWallpaperPlaybackChanged = function (data) {
+  try {
+    const s = typeof data === 'string' ? JSON.parse(data) : data;
+    const paused = Boolean(s && s.IsPaused);
+    document.body.classList.toggle('still', paused);
+    if (paused) running = false;
+    else if (!running && !STATIC) { running = true; lastFrame = 0; requestAnimationFrame(tick); }
+  } catch (e) { /* ignora */ }
+};
+
+// ------------------------------------------------------------------ avvio
+(async function start() {
+  if (Q.has('clock')) cfg.showClock = true;
+  await loadFonts();
+  rebuild();
+  setEnergy();
+  if (!STATIC) {
+    requestAnimationFrame(tick);
+    setInterval(updateClock, 1000);
+  }
+  if (Q.has('demo')) { // dati di esempio per le anteprime della documentazione
+    window.livelySystemInformation(JSON.stringify({ CurrentCpu: 23, CurrentGpu3D: 11, CurrentRamAvail: 9400, TotalRam: 16300, CurrentNetDown: 2400000, CurrentNetUp: 180000 }));
+    window.livelyCurrentTrack(JSON.stringify({ Title: 'Back In Black', Artist: 'AC/DC', Thumbnail: null }));
+  }
+  document.body.dataset.ready = '1';
+})();
+</script>
+</body>
+</html>

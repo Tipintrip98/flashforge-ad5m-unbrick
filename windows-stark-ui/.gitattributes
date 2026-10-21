@@ -1,0 +1,13 @@
+*.cmd   text eol=crlf
+*.ps1   text eol=crlf
+*.psm1  text eol=crlf
+*.xaml  text eol=crlf
+*.ini   text eol=crlf
+*.inc   text eol=crlf
+*.nss   text eol=crlf
+*.cur   binary
+*.ani   binary
+*.wav   binary
+*.ttf   binary
+*.jpg   binary
+*.png   binary

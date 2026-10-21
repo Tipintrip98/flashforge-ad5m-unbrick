@@ -1,0 +1,16 @@
+{
+  "accent": { "type": "color", "text": "Colore principale", "value": "#38D6FF" },
+  "gold": { "type": "color", "text": "Colore accento", "value": "#F2B544" },
+  "position": { "type": "dropdown", "text": "Posizione reattore", "value": 0, "items": ["Destra", "Centro", "Sinistra"] },
+  "scale": { "type": "slider", "text": "Dimensione (%)", "value": 100, "min": 60, "max": 140, "step": 5 },
+  "speed": { "type": "slider", "text": "Velocità rotazione (%)", "value": 100, "min": 0, "max": 300, "step": 10 },
+  "particles": { "type": "slider", "text": "Particelle", "value": 60, "min": 0, "max": 150, "step": 10 },
+  "fps": { "type": "dropdown", "text": "Limite FPS particelle", "value": 1, "items": ["24 FPS (risparmio)", "30 FPS (consigliato)", "60 FPS"] },
+  "showClock": { "type": "checkbox", "text": "Orologio grande (stile Apple TV)", "value": false },
+  "clock24": { "type": "checkbox", "text": "Formato 24 ore", "value": true },
+  "showTelemetry": { "type": "checkbox", "text": "Telemetria CPU / RAM / GPU / rete", "value": true },
+  "showNowPlaying": { "type": "checkbox", "text": "Scheda Now Playing", "value": true },
+  "frame": { "type": "checkbox", "text": "Cornici HUD agli angoli", "value": true },
+  "reduceMotion": { "type": "checkbox", "text": "Riduci movimento (statico, consumo minimo)", "value": false },
+  "info": { "type": "label", "text": "Stark HUD", "value": "Gli anelli ruotano sulla GPU: costo CPU quasi nullo. Lively mette in pausa lo sfondo con app a schermo intero." }
+}

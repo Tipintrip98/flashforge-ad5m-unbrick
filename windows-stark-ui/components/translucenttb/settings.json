@@ -1,0 +1,66 @@
+// See https://TranslucentTB.github.io/config for more information
+{
+  "$schema": "https://TranslucentTB.github.io/settings.schema.json",
+  "desktop_appearance": {
+    "accent": "clear",
+    "color": "#00000000",
+    "show_peek": false,
+    "show_line": false,
+    "blur_radius": 9
+  },
+  "visible_window_appearance": {
+    "enabled": true,
+    "accent": "acrylic",
+    "color": "#0A0F1499",
+    "show_peek": false,
+    "show_line": false,
+    "blur_radius": 9,
+    "rules": { "window_class": {}, "window_title": {}, "process_name": {} }
+  },
+  "maximized_window_appearance": {
+    "enabled": true,
+    "accent": "acrylic",
+    "color": "#0A0F14D9",
+    "show_peek": true,
+    "show_line": false,
+    "blur_radius": 9,
+    "rules": { "window_class": {}, "window_title": {}, "process_name": {} }
+  },
+  "start_opened_appearance": {
+    "enabled": true,
+    "accent": "normal",
+    "color": "#00000000",
+    "show_peek": true,
+    "show_line": false,
+    "blur_radius": 9
+  },
+  "search_opened_appearance": {
+    "enabled": true,
+    "accent": "normal",
+    "color": "#00000000",
+    "show_peek": true,
+    "show_line": false,
+    "blur_radius": 9
+  },
+  "task_view_opened_appearance": {
+    "enabled": true,
+    "accent": "normal",
+    "color": "#00000000",
+    "show_peek": false,
+    "show_line": false,
+    "blur_radius": 9
+  },
+  "battery_saver_appearance": {
+    "enabled": true,
+    "accent": "opaque",
+    "color": "#0A0F14FF",
+    "show_peek": true,
+    "show_line": false,
+    "blur_radius": 9
+  },
+  "ignored_windows": { "window_class": [], "window_title": [], "process_name": [] },
+  "hide_tray": false,
+  "disable_saving": false,
+  "verbosity": "warn",
+  "use_xaml_context_menu": false
+}
