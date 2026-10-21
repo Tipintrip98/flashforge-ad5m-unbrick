@@ -20,8 +20,6 @@ jobs:
             mode: nativo
           - os: windows-2025
             mode: componenti
-          - os: windows-2022
-            mode: diagnosi
     runs-on: ${{ matrix.os }}
     timeout-minutes: 45
     defaults:
@@ -32,7 +30,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Test unitari (Windows PowerShell 5.1)
-        if: matrix.mode != 'diagnosi'
         run: .\tests\Test-StarkCore.ps1
 
       - name: Ambiente
@@ -44,15 +41,10 @@ jobs:
           Get-Process explorer -ErrorAction SilentlyContinue | Select-Object Id, SessionId
 
       - name: Installazione, verifica e ripristino
-        if: matrix.mode != 'diagnosi'
         run: |
           $components = '${{ matrix.mode }}' -eq 'componenti'
           & .\tests\Test-StarkWindows.ps1 -Components:$components
           exit $LASTEXITCODE
-
-      - name: Esperimento colore finestre (DWM)
-        if: matrix.mode == 'diagnosi'
-        run: .\tests\Diag-DwmSync.ps1
 
       - name: Log e screenshot
         if: always()

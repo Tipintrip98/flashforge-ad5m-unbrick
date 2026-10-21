@@ -470,10 +470,14 @@ function Get-StarkHkcuSubKey {
 }
 
 function Backup-StarkRegValue {
-    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][AllowEmptyString()][string]$Name)
+    <#
+        Salva il valore attuale (una sola volta). Con -ObserveOnly il valore serve solo per verificare
+        il ripristino: lo riallinea Windows da solo e riscriverlo noi lo impedirebbe.
+    #>
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][AllowEmptyString()][string]$Name, [switch]$ObserveOnly)
     $s = Get-StarkState
     foreach ($e in $s.registry) { if ($e.path -eq $Path -and $e.name -eq $Name) { return } }
-    $entry = [ordered]@{ path = $Path; name = $Name; existed = $false; kind = $null; value = $null }
+    $entry = [ordered]@{ path = $Path; name = $Name; existed = $false; kind = $null; value = $null; observe = [bool]$ObserveOnly }
     $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey((Get-StarkHkcuSubKey $Path), $false)
     if ($key) {
         try {
@@ -824,9 +828,10 @@ function Install-StarkTheme {
     Set-StarkRegValue -Path $accent -Name 'AccentColorMenu' -Value (Get-StarkAbgr -Hex $script:AccentHex) -Type DWord
     Set-StarkRegValue -Path $accent -Name 'StartColorMenu' -Value (Get-StarkAbgr -Hex '#00546F') -Type DWord
     # Il colore di bordi e barre del titolo appartiene a DWM (il compositore grafico): non lo tocchiamo.
-    # Windows lo riallinea da solo all'accento; ne salviamo i valori per verificarli al ripristino.
+    # Windows sorveglia la chiave Accent e lo riallinea da solo (verificato sui runner Windows):
+    # ne salviamo i valori solo per controllare il ripristino.
     $dwm = 'HKCU:\Software\Microsoft\Windows\DWM'
-    foreach ($n in 'AccentColor', 'ColorizationColor', 'ColorizationAfterglow') { Backup-StarkRegValue -Path $dwm -Name $n }
+    foreach ($n in 'AccentColor', 'ColorizationColor', 'ColorizationAfterglow') { Backup-StarkRegValue -Path $dwm -Name $n -ObserveOnly }
     Set-StarkRegValue -Path $dwm -Name 'ColorPrevalence' -Value 0 -Type DWord
 
     # File .theme "Stark HUD": compare in Impostazioni > Temi per riselezionarlo in futuro.
@@ -1228,6 +1233,7 @@ function Restore-StarkRegistryValues {
     $fixed = 0
     for ($i = $State.registry.Count - 1; $i -ge 0; $i--) {
         $e = $State.registry[$i]
+        if ($e.PSObject.Properties['observe'] -and $e.observe) { continue }
         try {
             $sub = Get-StarkHkcuSubKey $e.path
             if ($e.existed) {
@@ -1316,6 +1322,9 @@ function Restore-StarkHUD {
     for ($i = $s.keysCreated.Count - 1; $i -ge 0; $i--) {
         try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree((Get-StarkHkcuSubKey $s.keysCreated[$i]), $false) } catch { }
     }
+    # Windows riallinea il colore delle finestre all'accento originale solo con questo avviso
+    # e solo se vede ancora il colore Stark in DWM: per questo i valori DWM non vengono riscritti.
+    Send-StarkSettingChange 'ImmersiveColorSet'
 
     # 4) font: scarica dalla sessione prima di cancellare i file
     $fontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
@@ -1396,11 +1405,14 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
         [void](Set-StarkDesktopIcons -Visible ([bool]$icons))
     }
 
-    # 9) Windows riallinea il colore delle finestre (DWM) all'accento originale con 10-20 s di ritardo:
-    #    si aspetta che abbia finito, poi si verifica che ogni valore salvato sia tornato com'era
+    # 9) si aspetta che Windows abbia riallineato il colore delle finestre (DWM),
+    #    poi si verifica che ogni valore salvato sia tornato com'era
     Write-StarkLog 'Attendo che Windows riallinei il colore delle finestre...' 'info' 90
-    if (-not (Wait-StarkDwmSync -State $s -TimeoutSec 45)) {
-        Write-StarkLog 'Il colore delle finestre non si e'' ancora riallineato: lo fara'' al prossimo accesso.' 'warn'
+    if (-not (Wait-StarkDwmSync -State $s -TimeoutSec 20)) {
+        Send-StarkSettingChange 'ImmersiveColorSet'
+        if (-not (Wait-StarkDwmSync -State $s -TimeoutSec 30)) {
+            Write-StarkLog 'Il colore delle finestre non si e'' ancora riallineato: lo fara'' al prossimo accesso.' 'warn'
+        }
     }
     $fixed = Restore-StarkRegistryValues -State $s -OnlyChanged
     if ($fixed -gt 0) {
