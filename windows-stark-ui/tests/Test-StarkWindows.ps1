@@ -277,7 +277,8 @@ $after = @(Get-RegSnapshot)
 $after | Set-Content (Join-Path $OutDir 'registry-after.txt') -Encoding UTF8
 $diff = @(Compare-Object -ReferenceObject $before -DifferenceObject $after)
 foreach ($d in $diff) { Write-Host ("    {0} {1}" -f $(if ($d.SideIndicator -eq '<=') { 'PRIMA ' } else { 'DOPO  ' }), $d.InputObject) -ForegroundColor Yellow }
-Check ($diff.Count -eq 0) 'Registro identico a prima dell''installazione' "($($diff.Count) differenze)"
+$diffText = ($diff | Select-Object -First 16 | ForEach-Object { "`n      $(if ($_.SideIndicator -eq '<=') { 'PRIMA' } else { 'DOPO ' }) $($_.InputObject)" }) -join ''
+Check ($diff.Count -eq 0) 'Registro identico a prima dell''installazione' "($($diff.Count) differenze)$diffText"
 Check (-not (Test-Path (Join-Path $fontDir 'Rajdhani-Light.ttf'))) 'Font rimossi'
 Check (-not (Test-Path $themeFile)) 'File tema rimosso'
 Check (-not (Test-Path (Join-Path $startup 'Stark HUD - suono di avvio.lnk'))) 'Collegamento di avvio rimosso'
@@ -305,13 +306,13 @@ Get-Content (Join-Path $OutDir 'gui-stdout.txt'), (Join-Path $OutDir 'gui-stderr
 foreach ($tab in 'TabTheme', 'TabComponents', 'TabTweaks') {
     $png = $shot -replace '\.png$', "-$tab.png"
     Check (Test-Path $png) "Screenshot interfaccia: $tab"
-    if ((Test-Path $png) -and $env:STARK_PRINT_SCREENSHOTS) {
+    if ((Test-Path $png) -and $env:STARK_PRINT_SCREENSHOTS -and $tab -ne 'TabTweaks') {
         # anteprima JPEG ridotta stampata nel log (base64) per chi non puo' scaricare gli artifact
         $src = New-Object System.Windows.Media.Imaging.BitmapImage
         $src.BeginInit(); $src.UriSource = New-Object Uri $png; $src.CacheOption = 'OnLoad'; $src.EndInit()
-        $scaled = New-Object System.Windows.Media.Imaging.TransformedBitmap($src, (New-Object System.Windows.Media.ScaleTransform(0.62, 0.62)))
+        $scaled = New-Object System.Windows.Media.Imaging.TransformedBitmap($src, (New-Object System.Windows.Media.ScaleTransform(0.55, 0.55)))
         $enc = New-Object System.Windows.Media.Imaging.JpegBitmapEncoder
-        $enc.QualityLevel = 82
+        $enc.QualityLevel = 72
         $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($scaled))
         $ms = New-Object System.IO.MemoryStream
         $enc.Save($ms)
