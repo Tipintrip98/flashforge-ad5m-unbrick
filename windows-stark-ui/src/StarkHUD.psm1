@@ -322,20 +322,8 @@ public static extern IntPtr GetDC(IntPtr hWnd);
 public static extern int ReleaseDC(IntPtr hWnd, IntPtr hDC);
 [DllImport("gdi32.dll")]
 public static extern int GetDeviceCaps(IntPtr hdc, int nIndex);
-[StructLayout(LayoutKind.Sequential)]
-public struct DwmColorParams { public uint Color; public uint Afterglow; public uint ColorBalance; public uint AfterglowBalance; public uint BlurBalance; public uint GlassReflectionIntensity; public uint OpaqueBlend; }
-[DllImport("dwmapi.dll", EntryPoint = "#127")]
-public static extern int DwmGetColorizationParameters(out DwmColorParams p);
-[DllImport("dwmapi.dll", EntryPoint = "#131")]
-public static extern int DwmSetColorizationParameters(ref DwmColorParams p, uint unknown);
 [DllImport("dwmapi.dll")]
 public static extern int DwmGetColorizationColor(out uint color, out bool opaque);
-[StructLayout(LayoutKind.Sequential)]
-public struct ImmersiveColorPreference { public uint StartColor; public uint AccentColor; }
-[DllImport("uxtheme.dll", EntryPoint = "GetUserColorPreference")]
-public static extern int GetUserColorPreference(out ImmersiveColorPreference p, bool forceReload);
-[DllImport("uxtheme.dll", EntryPoint = "SetUserColorPreference")]
-public static extern int SetUserColorPreference(ref ImmersiveColorPreference p, bool forceCommit);
 [DllImport("user32.dll", CharSet = CharSet.Unicode)]
 public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
 [DllImport("user32.dll", CharSet = CharSet.Unicode)]
@@ -350,47 +338,6 @@ public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, In
 function ConvertTo-StarkUInt32 {
     param([Parameter(Mandatory)]$Value)
     [BitConverter]::ToUInt32([BitConverter]::GetBytes([int32]$Value), 0)
-}
-
-function Set-StarkDwmColor {
-    <#
-        Colore di bordi e barre del titolo. DWM lo tiene in memoria e lo riscrive nel registro:
-        va impostato tramite le sue API (come fa Impostazioni), non solo nel registro.
-    #>
-    param([Parameter(Mandatory)][uint32]$Color, [uint32]$Afterglow = $Color)
-    Initialize-StarkNative
-    try {
-        $p = New-Object 'StarkHUD.Native+DwmColorParams'
-        if ([StarkHUD.Native]::DwmGetColorizationParameters([ref]$p) -ne 0) { return $false }
-        $p.Color = $Color
-        $p.Afterglow = $Afterglow
-        [StarkHUD.Native]::DwmSetColorizationParameters([ref]$p, 0) -eq 0
-    } catch { $false }
-}
-
-function Get-StarkUserColor {
-    <# Colore accento attivo (quello di Impostazioni > Colori), formato COLORREF 0x00BBGGRR. #>
-    Initialize-StarkNative
-    try {
-        $p = New-Object 'StarkHUD.Native+ImmersiveColorPreference'
-        if ([StarkHUD.Native]::GetUserColorPreference([ref]$p, $true) -ne 0) { return $null }
-        [pscustomobject]@{ Start = $p.StartColor; Accent = $p.AccentColor }
-    } catch { $null }
-}
-
-function Set-StarkUserColor {
-    <#
-        Imposta il colore accento come fa Impostazioni > Colori: Windows aggiorna da solo Start,
-        barra, evidenziazioni e il colore delle finestre (DWM), e lo salva nel registro.
-    #>
-    param([Parameter(Mandatory)][uint32]$Start, [Parameter(Mandatory)][uint32]$Accent)
-    Initialize-StarkNative
-    try {
-        $p = New-Object 'StarkHUD.Native+ImmersiveColorPreference'
-        $p.StartColor = $Start -band 0x00FFFFFF
-        $p.AccentColor = $Accent -band 0x00FFFFFF
-        [StarkHUD.Native]::SetUserColorPreference([ref]$p, $true) -eq 0
-    } catch { $false }
 }
 
 function Get-StarkDwmColor {
@@ -872,23 +819,15 @@ function Install-StarkTheme {
     Set-StarkRegValue -Path 'HKCU:\Control Panel\Desktop' -Name 'AutoColorization' -Value 0 -Type DWord
 
     # Colore accento ciano + tavolozza (la 8a tinta e' l'oro Stark)
-    $original = Get-StarkUserColor
-    if ($original) { Set-StarkExtra 'userColorPreference' ([ordered]@{ start = $original.Start; accent = $original.Accent }) -IfMissing }
     $accent = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Accent'
     Set-StarkRegValue -Path $accent -Name 'AccentPalette' -Value (Get-StarkAccentPalette -Hex $script:AccentHex) -Type Binary
     Set-StarkRegValue -Path $accent -Name 'AccentColorMenu' -Value (Get-StarkAbgr -Hex $script:AccentHex) -Type DWord
     Set-StarkRegValue -Path $accent -Name 'StartColorMenu' -Value (Get-StarkAbgr -Hex '#00546F') -Type DWord
     # Il colore di bordi e barre del titolo appartiene a DWM (il compositore grafico): non lo tocchiamo.
-    # Ne salviamo solo i valori, per verificare al ripristino che siano rimasti quelli originali.
+    # Windows lo riallinea da solo all'accento; ne salviamo i valori per verificarli al ripristino.
     $dwm = 'HKCU:\Software\Microsoft\Windows\DWM'
     foreach ($n in 'AccentColor', 'ColorizationColor', 'ColorizationAfterglow') { Backup-StarkRegValue -Path $dwm -Name $n }
     Set-StarkRegValue -Path $dwm -Name 'ColorPrevalence' -Value 0 -Type DWord
-    Save-StarkState
-    if (-not (Set-StarkUserColor -Start (Get-StarkAbgr -Hex '#00546F' -Alpha 0) -Accent (Get-StarkAbgr -Hex $script:AccentHex -Alpha 0))) {
-        Write-StarkLog 'API colore di Windows non disponibile: l''accento verra'' applicato al prossimo accesso.' 'warn'
-    }
-    # Windows ricalcola la tavolozza dall'accento: rimettiamo la nostra (con l'oro Stark)
-    Set-StarkRegValue -Path $accent -Name 'AccentPalette' -Value (Get-StarkAccentPalette -Hex $script:AccentHex) -Type Binary
 
     # File .theme "Stark HUD": compare in Impostazioni > Temi per riselezionarlo in futuro.
     # Non viene applicato con un doppio clic simulato: Windows lo applicherebbe in modo asincrono,
@@ -1318,6 +1257,22 @@ function Restore-StarkRegistryValues {
     $fixed
 }
 
+function Wait-StarkDwmSync {
+    <# Attende che il colore delle finestre (DWM) torni a quello salvato nel backup. #>
+    param([Parameter(Mandatory)]$State, [int]$TimeoutSec = 45)
+    $entry = $State.registry | Where-Object { $_.path -eq 'HKCU:\Software\Microsoft\Windows\DWM' -and $_.name -eq 'ColorizationColor' } | Select-Object -First 1
+    if (-not $entry -or -not $entry.existed) { return $true }
+    $want = (ConvertTo-StarkUInt32 $entry.value) -band 0x00FFFFFF
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    do {
+        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\DWM')
+        $cur = if ($key) { try { $key.GetValue('ColorizationColor') } finally { $key.Close() } } else { $null }
+        if ($null -ne $cur -and ((ConvertTo-StarkUInt32 $cur) -band 0x00FFFFFF) -eq $want) { return $true }
+        Start-Sleep -Seconds 2
+    } while ((Get-Date) -lt $deadline)
+    $false
+}
+
 function Restore-StarkHUD {
     <# Riporta Windows esattamente com'era prima di Stark HUD. #>
     [CmdletBinding()]
@@ -1355,16 +1310,7 @@ function Restore-StarkHUD {
         Set-StarkLockScreen -ImagePath $keepLock
     }
 
-    # 3) colore accento con l'API di Windows, PRIMA del registro: se il registro fosse gia' tornato
-    #    all'originale, per Windows "non cambierebbe nulla" e il colore delle finestre (DWM) resterebbe Stark
-    $pref = Get-StarkExtra 'userColorPreference'
-    if ($pref) {
-        $ok = Set-StarkUserColor -Start ([uint32]$pref.start) -Accent ([uint32]$pref.accent)
-        Write-StarkLog ('Colore accento originale riapplicato con l''API di Windows ({0}).' -f $(if ($ok) { 'ok' } else { 'non disponibile' })) 'info'
-        Start-Sleep -Seconds 2
-    }
-
-    # 3b) registro: valori originali in ordine inverso, poi rimozione delle chiavi create
+    # 3) registro: valori originali in ordine inverso, poi rimozione delle chiavi create
     Write-StarkLog 'Ripristino dei valori di registro originali...' 'info' 45
     [void](Restore-StarkRegistryValues -State $s)
     for ($i = $s.keysCreated.Count - 1; $i -ge 0; $i--) {
@@ -1443,36 +1389,25 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
 
     Restart-StarkExplorer
 
-    # 8) stato tenuto in memoria da Windows ed Esplora risorse: si ripristina con le loro API
-    $dwmColor = $s.registry | Where-Object { $_.path -eq 'HKCU:\Software\Microsoft\Windows\DWM' -and $_.name -eq 'ColorizationColor' } | Select-Object -First 1
-    $dwmGlow = $s.registry | Where-Object { $_.path -eq 'HKCU:\Software\Microsoft\Windows\DWM' -and $_.name -eq 'ColorizationAfterglow' } | Select-Object -First 1
-    if ($dwmColor -and $dwmColor.existed) {
-        $want = ConvertTo-StarkUInt32 $dwmColor.value
-        $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\DWM')
-        $nowReg = if ($key) { try { $key.GetValue('ColorizationColor') } finally { $key.Close() } } else { $null }
-        if ($null -ne $nowReg -and ((ConvertTo-StarkUInt32 $nowReg) -band 0x00FFFFFF) -ne ($want -band 0x00FFFFFF) -and $pref) {
-            # Windows sincronizza DWM solo quando l'accento cambia davvero: piccolo cambio e ritorno all'originale
-            $acc = [uint32]$pref.accent
-            [void](Set-StarkUserColor -Start ([uint32]$pref.start) -Accent ($acc -bxor 0x00010101))
-            Start-Sleep -Seconds 1
-            $ok = Set-StarkUserColor -Start ([uint32]$pref.start) -Accent $acc
-            Start-Sleep -Seconds 2
-            Write-StarkLog ('Colore delle finestre risincronizzato con l''accento originale ({0}).' -f $(if ($ok) { 'ok' } else { 'API non disponibile' })) 'info'
-        }
-    }
+    # 8) stato tenuto in memoria da Esplora risorse: si ripristina con il suo comando
     $icons = Get-StarkExtra 'desktopIconsVisible'
     if ($null -ne $icons) {
         Start-Sleep -Seconds 2  # il desktop di Esplora risorse appena riavviato deve essere pronto
         [void](Set-StarkDesktopIcons -Visible ([bool]$icons))
     }
 
-    # 9) verifica finale: Esplora risorse puo' aver riscritto valori che aveva in memoria
-    Start-Sleep -Seconds 3
+    # 9) Windows riallinea il colore delle finestre (DWM) all'accento originale con 10-20 s di ritardo:
+    #    si aspetta che abbia finito, poi si verifica che ogni valore salvato sia tornato com'era
+    Write-StarkLog 'Attendo che Windows riallinei il colore delle finestre...' 'info' 90
+    if (-not (Wait-StarkDwmSync -State $s -TimeoutSec 45)) {
+        Write-StarkLog 'Il colore delle finestre non si e'' ancora riallineato: lo fara'' al prossimo accesso.' 'warn'
+    }
     $fixed = Restore-StarkRegistryValues -State $s -OnlyChanged
     if ($fixed -gt 0) {
         Write-StarkLog "Verifica finale: $fixed impostazioni riscritte da Windows sono state riportate all'originale." 'info'
         Restart-StarkExplorer
         Send-StarkSettingChange
+        [void](Wait-StarkDwmSync -State $s -TimeoutSec 30)
     }
 
     # Rainmeter era gia' presente prima di Stark HUD: riavvialo con il suo layout originale

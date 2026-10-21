@@ -163,7 +163,7 @@ catch { Check $false 'XAML Flow Launcher ben formato' $_.Exception.Message }
 Section '2. Fotografia del registro'
 $before = @(Get-RegSnapshot)
 $diag = New-Object System.Collections.Generic.List[string]
-$diag.Add(('DWM prima: memoria 0x{0:X8}, registro 0x{1:X8}, accento Windows 0x{2:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor'), (Get-StarkUserColor).Accent))
+$diag.Add(('DWM prima: memoria 0x{0:X8}, registro 0x{1:X8}, accento 0x{2:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor'), (Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentColorMenu')))
 $before | Set-Content (Join-Path $OutDir 'registry-before.txt') -Encoding UTF8
 Write-Host "Valori registrati: $($before.Count)"
 
@@ -200,7 +200,7 @@ Check ((Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Themes\Personali
 $pal = Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentPalette'
 Check ($pal -is [byte[]] -and $pal.Length -eq 32) 'Tavolozza accento 32 byte'
 Check ((Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentColorMenu') -eq -3697152) 'AccentColorMenu ABGR ciano'
-$diag.Add(('DWM dopo installazione: memoria 0x{0:X8}, registro 0x{1:X8}, accento Windows 0x{2:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor'), (Get-StarkUserColor).Accent))
+$diag.Add(('DWM dopo installazione: memoria 0x{0:X8}, registro 0x{1:X8}, accento 0x{2:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor'), (Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentColorMenu')))
 $themeFile = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Themes\StarkHUD.theme'
 Check (Test-Path $themeFile) 'File StarkHUD.theme creato'
 if (Test-Path $themeFile) {
@@ -277,9 +277,14 @@ $t = Measure-Command { Restore-StarkHUD -RemoveApps:$Components }
 Write-Host ("Durata ripristino: {0:N0} s" -f $t.TotalSeconds)
 Check ($installErrors.Count -eq 0) 'Ripristino senza errori' ($installErrors -join ' | ')
 $diag.Add(('DWM subito dopo il ripristino: memoria 0x{0:X8}, registro 0x{1:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor')))
-Start-Sleep -Seconds 5  # lascia a DWM ed Esplora risorse il tempo di salvare il loro stato
-$after = @(Get-RegSnapshot)
-$diag.Add(('DWM 5 s dopo il ripristino: memoria 0x{0:X8}, registro 0x{1:X8}, accento Windows 0x{2:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor'), (Get-StarkUserColor).Accent))
+# Windows riallinea alcuni valori con qualche secondo di ritardo: si confronta fino a 60 s
+for ($try = 1; $try -le 12; $try++) {
+    Start-Sleep -Seconds 5
+    $after = @(Get-RegSnapshot)
+    if (-not (Compare-Object -ReferenceObject $before -DifferenceObject $after)) { break }
+}
+$diag.Add("Registro confrontato dopo $([Math]::Min($try, 12) * 5) s")
+$diag.Add(('DWM a fine confronto: memoria 0x{0:X8}, registro 0x{1:X8}, accento 0x{2:X8}' -f (Get-StarkDwmColor), (Get-RegValue 'Software\Microsoft\Windows\DWM' 'ColorizationColor'), (Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\Accent' 'AccentColorMenu')))
 $after | Set-Content (Join-Path $OutDir 'registry-after.txt') -Encoding UTF8
 $diff = @(Compare-Object -ReferenceObject $before -DifferenceObject $after)
 foreach ($d in $diff) { Write-Host ("    {0} {1}" -f $(if ($d.SideIndicator -eq '<=') { 'PRIMA ' } else { 'DOPO  ' }), $d.InputObject) -ForegroundColor Yellow }
