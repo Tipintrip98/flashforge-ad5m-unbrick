@@ -40,7 +40,8 @@ function Section([string]$Title) { Write-Host ''; Write-Host "=== $Title ===" -F
 function Get-RegValue([string]$Sub, [string]$Name) {
     $k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($Sub)
     if (-not $k) { return $null }
-    try { $k.GetValue($Name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } finally { $k.Close() }
+    # la virgola impedisce a PowerShell di srotolare i valori binari (byte[]) in object[]
+    try { , $k.GetValue($Name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames) } finally { $k.Close() }
 }
 
 # Chiavi HKCU toccate dal pack: confrontate prima/dopo il ripristino

@@ -314,6 +314,8 @@ public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wP
 public static extern int AddFontResource(string lpFileName);
 [DllImport("gdi32.dll", CharSet = CharSet.Unicode)]
 public static extern bool RemoveFontResource(string lpFileName);
+[DllImport("user32.dll", SetLastError = true)]
+public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, IntPtr lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);
 [DllImport("user32.dll")]
 public static extern IntPtr GetDC(IntPtr hWnd);
 [DllImport("user32.dll")]
@@ -328,6 +330,12 @@ function Send-StarkSettingChange {
     Initialize-StarkNative
     $result = [UIntPtr]::Zero
     [void][StarkHUD.Native]::SendMessageTimeout([IntPtr]0xFFFF, 0x001A, [UIntPtr]::Zero, $Area, 0x0002, 3000, [ref]$result)
+}
+
+function Send-StarkFontChange {
+    Initialize-StarkNative
+    $result = [UIntPtr]::Zero
+    [void][StarkHUD.Native]::SendMessageTimeout([IntPtr]0xFFFF, 0x001D, [UIntPtr]::Zero, [IntPtr]::Zero, 0x0002, 3000, [ref]$result)  # WM_FONTCHANGE
 }
 
 function Get-StarkDisplay {
@@ -548,19 +556,6 @@ function Restart-StarkExplorer {
     if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
 }
 
-function Invoke-StarkThemeFile {
-    <# Applica un file .theme come farebbe un doppio clic, poi chiude la finestra Impostazioni. #>
-    param([Parameter(Mandatory)][string]$Path)
-    $wasOpen = [bool](Get-Process SystemSettings -ErrorAction SilentlyContinue)
-    Start-Process -FilePath $Path
-    $deadline = (Get-Date).AddSeconds(20)
-    while (-not (Get-Process SystemSettings -ErrorAction SilentlyContinue) -and (Get-Date) -lt $deadline) {
-        Start-Sleep -Milliseconds 500
-    }
-    Start-Sleep -Seconds 4  # Windows applica il tema mentre Impostazioni si apre
-    if (-not $wasOpen) { Get-Process SystemSettings -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }
-}
-
 function Find-StarkExe {
     param([string[]]$Candidates)
     foreach ($c in $Candidates) {
@@ -580,11 +575,57 @@ function Get-StarkWingetFlags {
     $script:WingetFlags
 }
 
+function Join-StarkArguments {
+    <# Riga di comando per Start-Process: virgolette solo dove servono. #>
+    param([string[]]$Arguments)
+    ($Arguments | Where-Object { $_ -ne $null -and $_ -ne '' } | ForEach-Object {
+            if ($_ -match '[\s"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ }
+        }) -join ' '
+}
+
+function Invoke-StarkWinget {
+    <#
+        Esegue winget con un limite di tempo: un installer bloccato non deve mai bloccare Stark HUD.
+        Restituisce codice di uscita, testo prodotto e se e' scaduto il tempo.
+    #>
+    param([Parameter(Mandatory)][string[]]$Arguments, [int]$TimeoutSec = 900)
+    $all = @($Arguments) + @(Get-StarkWingetFlags)
+    $log = Join-Path $env:TEMP ('starkhud-winget-{0}' -f [guid]::NewGuid().ToString('N'))
+    $p = Start-Process -FilePath 'winget.exe' -ArgumentList (Join-StarkArguments $all) -NoNewWindow -PassThru `
+        -RedirectStandardOutput "$log.out" -RedirectStandardError "$log.err"
+    $null = $p.Handle  # senza questo PowerShell 5.1 perde il codice di uscita
+    $timedOut = -not $p.WaitForExit($TimeoutSec * 1000)
+    if ($timedOut) { try { $p.Kill() } catch { } }
+    $text = ''
+    foreach ($f in "$log.out", "$log.err") {
+        if (Test-Path -LiteralPath $f) { $text += [IO.File]::ReadAllText($f); Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+    }
+    [pscustomobject]@{ ExitCode = $(if ($timedOut) { -1 } else { $p.ExitCode }); Output = $text; TimedOut = $timedOut }
+}
+
 function Test-StarkWingetPackage {
     param([Parameter(Mandatory)][string]$Id)
-    $flags = @(Get-StarkWingetFlags)
-    $out = & winget.exe list --id $Id -e --accept-source-agreements @flags 2>$null | Out-String
-    ($LASTEXITCODE -eq 0) -and ($out -match [regex]::Escape($Id))
+    $r = Invoke-StarkWinget -Arguments @('list', '--id', $Id, '-e', '--accept-source-agreements') -TimeoutSec 180
+    ($r.ExitCode -eq 0) -and ($r.Output -match [regex]::Escape($Id))
+}
+
+# Processi da chiudere prima di aggiornare i file di un'app o di disinstallarla
+$script:AppProcesses = @{
+    'Rainmeter.Rainmeter'           = @('Rainmeter')
+    'rocksdanister.LivelyWallpaper' = @('Lively*')
+    'Flow-Launcher.Flow-Launcher'   = @('Flow.Launcher')
+    'CharlesMilette.TranslucentTB'  = @('TranslucentTB')
+    'RamenSoftware.Windhawk'        = @('windhawk')
+}
+
+function Stop-StarkAppProcesses {
+    param([Parameter(Mandatory)][string]$Id)
+    if (-not $script:AppProcesses.ContainsKey($Id)) { return }
+    $procs = @(foreach ($n in $script:AppProcesses[$Id]) { Get-Process -Name $n -ErrorAction SilentlyContinue })
+    if ($procs.Count) {
+        $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+    }
 }
 
 function Install-StarkApp {
@@ -599,17 +640,17 @@ function Install-StarkApp {
         return $true
     }
     Write-StarkLog "Installazione $Name (winget $Id)... potrebbe comparire un prompt UAC." 'info'
-    $flags = @(Get-StarkWingetFlags)
-    $wingetOut = & winget.exe install --id $Id -e --silent --accept-package-agreements --accept-source-agreements @flags 2>&1 | Out-String
-    if ($LASTEXITCODE -eq 0 -or (Test-StarkWingetPackage -Id $Id)) {
+    $r = Invoke-StarkWinget -Arguments @('install', '--id', $Id, '-e', '--silent', '--accept-package-agreements', '--accept-source-agreements') -TimeoutSec 900
+    if ($r.TimedOut) { Write-StarkLog "winget non ha finito entro 15 minuti per ${Name}: installazione interrotta." 'warn' }
+    if ($r.ExitCode -eq 0 -or (Test-StarkWingetPackage -Id $Id)) {
         $s = Get-StarkState
         if (-not ($s.apps -contains $Id)) { [void]$s.apps.Add($Id) }
         Save-StarkState
         Write-StarkLog "$Name installato." 'ok'
         return $true
     }
-    $tail = (($wingetOut -split "`r?`n") | Where-Object { $_.Trim() -and $_ -notmatch '^[\s\-\\|/]+$' } | Select-Object -Last 3) -join ' / '
-    Write-StarkLog ("Installazione di $Name non riuscita (codice 0x{0:X8}): {1}" -f $LASTEXITCODE, $tail) 'error'
+    $tail = (($r.Output -split "`r?`n") | Where-Object { $_.Trim() -and $_ -notmatch '^[\s\-\\|/]+$' } | Select-Object -Last 3) -join ' / '
+    Write-StarkLog ("Installazione di $Name non riuscita (codice 0x{0:X8}): {1}" -f $r.ExitCode, $tail) 'error'
     $false
 }
 
@@ -640,7 +681,7 @@ function Install-StarkFonts {
         Set-StarkRegValue -Path 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts' -Name $script:Fonts[$file] -Value $dst -Type String
         [void][StarkHUD.Native]::AddFontResource($dst)
     }
-    Send-StarkSettingChange -Area 'fonts'
+    Send-StarkFontChange
     Write-StarkLog 'Font Rajdhani e Share Tech Mono installati (solo per il tuo utente).' 'ok'
 }
 
@@ -694,19 +735,10 @@ function Set-StarkWallpaper {
     [void][StarkHUD.Native]::SystemParametersInfo(0x0014, 0, $Path, 0x03)  # SPI_SETDESKWALLPAPER
 }
 
-function Save-StarkPreviousTheme {
-    <# Copia tema, sfondo e immagine di blocco attuali: servono per tornare indietro. #>
-    if (Get-StarkExtra 'previousTheme') { return }
+function Save-StarkPreviousWallpaper {
+    <# Copia dello sfondo attuale: serve al ripristino se il file originale non esiste piu'. #>
+    if (Get-StarkExtra 'previousWallpaper') { return }
     New-Item -ItemType Directory -Path $script:StateDir -Force | Out-Null
-    try {
-        $cur = (Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes' -Name CurrentTheme -ErrorAction Stop).CurrentTheme
-        if ($cur -and (Test-Path -LiteralPath $cur) -and ($cur -notmatch 'StarkHUD')) {
-            $copy = Join-Path $script:StateDir 'previous.theme'
-            Copy-Item -LiteralPath $cur -Destination $copy -Force
-            Set-StarkExtra 'previousTheme' $copy
-            Set-StarkExtra 'previousThemeOriginalPath' $cur
-        }
-    } catch { Write-StarkLog 'Tema attuale non leggibile: al ripristino verra'' usato il tema Windows predefinito.' 'warn' }
     $transcoded = Join-Path $env:APPDATA 'Microsoft\Windows\Themes\TranscodedWallpaper'
     if (Test-Path -LiteralPath $transcoded) {
         $wp = Join-Path $script:StateDir 'previous-wallpaper.jpg'
@@ -719,7 +751,7 @@ function Install-StarkTheme {
     param([string]$AssetRoot, [hashtable]$Options)
     $display = Get-StarkDisplay
     $wall = Join-Path $AssetRoot ('wallpapers\' + (Select-StarkWallpaper -Width $display.Width -Height $display.Height))
-    Save-StarkPreviousTheme
+    Save-StarkPreviousWallpaper
 
     # Modalita' scura + trasparenze (valori salvati per il ripristino)
     $pers = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
@@ -740,7 +772,9 @@ function Install-StarkTheme {
     Set-StarkRegValue -Path $dwm -Name 'ColorizationAfterglow' -Value (Get-StarkArgb -Hex $script:AccentHex) -Type DWord
     Set-StarkRegValue -Path $dwm -Name 'ColorPrevalence' -Value 0 -Type DWord
 
-    # File .theme completo (sfondo, colori, cursori, suoni) applicato in modo nativo
+    # File .theme "Stark HUD": compare in Impostazioni > Temi per riselezionarlo in futuro.
+    # Non viene applicato con un doppio clic simulato: Windows lo applicherebbe in modo asincrono,
+    # anche dopo un eventuale ripristino. Tutto viene applicato qui sotto in modo diretto e sincrono.
     $themeDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Themes'
     New-Item -ItemType Directory -Path $themeDir -Force | Out-Null
     $themePath = Join-Path $themeDir 'StarkHUD.theme'
@@ -750,8 +784,6 @@ function Install-StarkTheme {
         -SoundDir $(if ($Options.Sounds) { Join-Path $AssetRoot 'sounds' })
     Set-Content -Path $themePath -Value $content -Encoding Unicode
     Save-StarkState
-    Write-StarkLog 'Applicazione del tema Windows (si apre e si chiude Impostazioni)...' 'info'
-    Invoke-StarkThemeFile -Path $themePath
     Set-StarkWallpaper -Path $wall
     Send-StarkSettingChange
     Write-StarkLog "Tema scuro, accento ciano reattore e sfondo $([IO.Path]::GetFileName($wall)) applicati." 'ok'
@@ -844,7 +876,7 @@ function Install-StarkRainmeter {
         Start-Process -FilePath $exe
         Start-Sleep -Seconds 5
     }
-    & $exe '!LoadLayout' 'StarkHUD'
+    Start-Process -FilePath $exe -ArgumentList '!LoadLayout StarkHUD'
     Write-StarkLog "Widget HUD Rainmeter attivi: orologio, meteo, telemetria, control center (scala $scale)." 'ok'
 }
 
@@ -898,7 +930,7 @@ function Install-StarkLively {
         Start-Process -FilePath $exe
         Start-Sleep -Seconds 8
     }
-    & $exe setwp --file $first
+    Start-Process -FilePath $exe -ArgumentList (Join-StarkArguments @('setwp', '--file', $first))
     Write-StarkLog 'Sfondo animato "Arc Reactor" attivo (anelli su GPU, pausa automatica con app a schermo intero).' 'ok'
 }
 
@@ -906,6 +938,8 @@ function Install-StarkFlowLauncher {
     param([hashtable]$Options)
     if (-not (Install-StarkApp -Id 'Flow-Launcher.Flow-Launcher' -Name 'Flow Launcher')) { return }
     $root = Join-Path $env:APPDATA 'FlowLauncher'
+    # Flow tiene aperti tema e impostazioni (e le riscrive in chiusura): va fermato prima di toccarli
+    Stop-StarkAppProcesses -Id 'Flow-Launcher.Flow-Launcher'
     $themeDst = Join-Path $root 'Themes\StarkHUD.xaml'
     Backup-StarkFile -Target $themeDst
     New-Item -ItemType Directory -Path (Split-Path $themeDst) -Force | Out-Null
@@ -913,8 +947,6 @@ function Install-StarkFlowLauncher {
 
     $settings = Join-Path $root 'Settings\Settings.json'
     Backup-StarkFile -Target $settings
-    $running = Get-Process 'Flow.Launcher' -ErrorAction SilentlyContinue
-    if ($running) { $running | Stop-Process -Force; Start-Sleep -Seconds 2 }
     New-Item -ItemType Directory -Path (Split-Path $settings) -Force | Out-Null
     $json = if (Test-Path -LiteralPath $settings) { Get-Content $settings -Raw -Encoding UTF8 } else { '{}' }
     $json = Set-StarkJsonScalar -Json $json -Key 'Theme' -Value 'StarkHUD'
@@ -1145,33 +1177,10 @@ function Restore-StarkHUD {
     }
     foreach ($p in 'Rainmeter', 'Flow.Launcher') { Get-Process $p -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue }
     $lively = Find-StarkExe @('%ProgramFiles%\Lively Wallpaper\Lively.exe', '%LOCALAPPDATA%\Programs\Lively Wallpaper\Lively.exe')
-    if ($lively -and (Get-Process Lively -ErrorAction SilentlyContinue)) { & $lively closewp --monitor -1 }
+    if ($lively -and (Get-Process Lively -ErrorAction SilentlyContinue)) { Start-Process -FilePath $lively -ArgumentList 'closewp --monitor -1' }
     Start-Sleep -Seconds 1
 
-    # 2) tema precedente (sfondo, colori, cursori, suoni) applicato in modo nativo
-    #    Si riapplica il file nel suo percorso originale, cosi' Windows non punta alla cartella di backup.
-    #    Un tema utente (es. Custom.theme) puo' essere stato riscritto da Windows: torna prima la copia salvata.
-    $prevTheme = Get-StarkExtra 'previousTheme'
-    $prevOriginal = Get-StarkExtra 'previousThemeOriginalPath'
-    $userThemes = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Themes'
-    $fallback = Join-Path $env:SystemRoot 'Resources\Themes\aero.theme'
-    $themeToApply = $null
-    if ($prevOriginal -and $prevTheme -and (Test-Path -LiteralPath $prevTheme)) {
-        if ($prevOriginal.StartsWith($userThemes, [StringComparison]::OrdinalIgnoreCase) -or -not (Test-Path -LiteralPath $prevOriginal)) {
-            try {
-                New-Item -ItemType Directory -Path (Split-Path $prevOriginal) -Force | Out-Null
-                Copy-Item -LiteralPath $prevTheme -Destination $prevOriginal -Force
-            } catch { }
-        }
-        if (Test-Path -LiteralPath $prevOriginal) { $themeToApply = $prevOriginal }
-    }
-    if (-not $themeToApply -and (Test-Path -LiteralPath $fallback)) { $themeToApply = $fallback }
-    if ($themeToApply) {
-        Write-StarkLog 'Riapplico il tema precedente...' 'info' 20
-        Invoke-StarkThemeFile -Path $themeToApply
-    }
-
-    # 3) schermata di blocco prima del registro: l'API di Windows riscrive i valori di Spotlight.
+    # 2) schermata di blocco prima del registro: l'API di Windows riscrive i valori di Spotlight.
     #    Se prima era attivo Spotlight basta ripristinare il registro (Spotlight riparte da solo).
     $spot = $s.registry | Where-Object { $_.name -eq 'RotatingLockScreenEnabled' } | Select-Object -First 1
     $spotlightWasOn = $spot -and $spot.existed -and [int]$spot.value -eq 1
@@ -1182,7 +1191,7 @@ function Restore-StarkHUD {
         Set-StarkLockScreen -ImagePath $keepLock
     }
 
-    # 4) registro: valori originali in ordine inverso, poi rimozione delle chiavi create
+    # 3) registro: valori originali in ordine inverso, poi rimozione delle chiavi create
     Write-StarkLog 'Ripristino dei valori di registro originali...' 'info' 45
     for ($i = $s.registry.Count - 1; $i -ge 0; $i--) {
         $e = $s.registry[$i]
@@ -1206,11 +1215,16 @@ function Restore-StarkHUD {
         try { [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree((Get-StarkHkcuSubKey $s.keysCreated[$i]), $false) } catch { }
     }
 
-    # 5) font: scarica dalla sessione prima di cancellare i file
+    # 4) font: scarica dalla sessione prima di cancellare i file
     $fontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
-    foreach ($file in $script:Fonts.Keys) { [void][StarkHUD.Native]::RemoveFontResource((Join-Path $fontDir $file)) }
+    foreach ($file in $script:Fonts.Keys) {
+        $fp = Join-Path $fontDir $file
+        # AddFontResource conta i caricamenti (es. due installazioni): va rimosso finche' Windows lo trattiene
+        for ($n = 0; $n -lt 16; $n++) { if (-not [StarkHUD.Native]::RemoveFontResource($fp)) { break } }
+    }
+    Send-StarkFontChange
 
-    # 6) file: ripristina le copie, elimina quelli creati da Stark HUD
+    # 5) file: ripristina le copie, elimina quelli creati da Stark HUD
     Write-StarkLog 'Ripristino dei file...' 'info' 60
     for ($i = $s.files.Count - 1; $i -ge 0; $i--) {
         $f = $s.files[$i]
@@ -1219,10 +1233,19 @@ function Restore-StarkHUD {
             if ($f.backup -and (Test-Path -LiteralPath $f.backup)) {
                 Copy-Item -LiteralPath $f.backup -Destination $f.target -Recurse -Force
             }
-        } catch { Write-StarkLog "File $($f.target) non ripristinato: $($_.Exception.Message)" 'warn' }
+        } catch {
+            if ($f.target.StartsWith($fontDir, [StringComparison]::OrdinalIgnoreCase) -and -not $f.backup) {
+                # font ancora aperto da un'app: verra' eliminato al prossimo accesso
+                $runOnce = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey('Software\Microsoft\Windows\CurrentVersion\RunOnce')
+                try { $runOnce.SetValue('StarkHUD-' + [IO.Path]::GetFileNameWithoutExtension($f.target), ('cmd.exe /c del /f /q "{0}"' -f $f.target)) } finally { $runOnce.Close() }
+                Write-StarkLog "Font $([IO.Path]::GetFileName($f.target)) in uso: verra' eliminato al prossimo accesso." 'info'
+            } else {
+                Write-StarkLog "File $($f.target) non ripristinato: $($_.Exception.Message)" 'warn'
+            }
+        }
     }
 
-    # 7) sfondo, piano energetico, menu contestuale
+    # 6) sfondo, piano energetico, menu contestuale
     $wpEntry = $s.registry | Where-Object { $_.path -eq 'HKCU:\Control Panel\Desktop' -and $_.name -eq 'Wallpaper' } | Select-Object -First 1
     $wpOriginal = if ($wpEntry -and $wpEntry.existed) { [Environment]::ExpandEnvironmentVariables([string]$wpEntry.value) } else { $null }
     $wp = Get-StarkExtra 'previousWallpaper'
@@ -1250,12 +1273,13 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
     [void][StarkHUD.Native]::SystemParametersInfo(0x0057, 0, $null, 0x03)
     Send-StarkSettingChange
 
-    # 8) app installate da Stark HUD (solo su richiesta)
+    # 7) app installate da Stark HUD (solo su richiesta)
     if ($RemoveApps) {
         foreach ($id in @($s.apps)) {
             Write-StarkLog "Disinstallazione $id..." 'info' 80
-            $flags = @(Get-StarkWingetFlags)
-            & winget.exe uninstall --id $id -e --silent @flags | Out-Null
+            # un'app ancora aperta blocca il disinstallatore in attesa di una conferma invisibile
+            Stop-StarkAppProcesses -Id $id
+            $null = Invoke-StarkWinget -Arguments @('uninstall', '--id', $id, '-e', '--silent', '--accept-source-agreements') -TimeoutSec 600
         }
     } elseif ($s.apps.Count) {
         Write-StarkLog ("App installate da Stark HUD lasciate al loro posto: {0}. Usa 'Rimuovi anche le app' per toglierle." -f ($s.apps -join ', ')) 'info'

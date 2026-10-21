@@ -32,7 +32,7 @@ Le app installate restano, a meno che tu non attivi **Rimuovi anche le app**.
 
 | Parte di Windows | Cosa diventa | Come |
 |---|---|---|
-| Colori e modalità | Scuro, accento ciano reattore, tavolozza con oro Stark, trasparenze | File `.theme` nativo + registro utente |
+| Colori e modalità | Scuro, accento ciano reattore, tavolozza con oro Stark, trasparenze | Registro utente + API di sistema (crea anche il tema "Stark HUD" in Impostazioni → Temi) |
 | Sfondo | "Arc Reactor" 4K (versione ultrawide inclusa) | Nativo |
 | Schermata di blocco e accesso | Reattore centrato | API Windows (WinRT) |
 | Puntatori | 17 cursori vettoriali multi-risoluzione, attesa animata | Schema cursori nativo |

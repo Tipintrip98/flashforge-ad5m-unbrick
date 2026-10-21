@@ -99,8 +99,9 @@ foreach ($name in 'TitleBar', 'BtnMin', 'BtnClose', 'InfoText', 'TabTheme', 'Tab
 
 # Font del pack caricati direttamente dalla cartella (non serve installarli per la GUI)
 $fontBase = New-Object System.Uri ((Join-Path $Root 'theme\fonts') + '\')
-$window.Resources['Display'] = New-Object System.Windows.Media.FontFamily($fontBase, './#Rajdhani, Segoe UI Light')
-$window.Resources['Mono'] = New-Object System.Windows.Media.FontFamily($fontBase, './#Share Tech Mono, Consolas')
+# ::new e non New-Object: New-Object avvolge l'oggetto in un PSObject che WPF rifiuta come FontFamily
+$window.Resources['Display'] = [System.Windows.Media.FontFamily]::new($fontBase, './#Rajdhani, Segoe UI Light')
+$window.Resources['Mono'] = [System.Windows.Media.FontFamily]::new($fontBase, './#Share Tech Mono, Consolas')
 
 $script:Toggles = @{}
 $bc = New-Object System.Windows.Media.BrushConverter

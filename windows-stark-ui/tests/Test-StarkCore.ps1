@@ -93,12 +93,10 @@ Assert-Equal $multi.GetType().Name 'String[]' 'MultiString resta string[] anche 
 Assert-Equal (ConvertTo-StarkRegData -Value (Get-StarkAbgr -Hex '#0096C7') -Type DWord) -3697152 'DWORD oltre Int32 convertito con segno'
 
 Write-Host 'winget (regressione: flag spezzato in caratteri)'
-function global:winget.exe { $global:StarkWingetArgs = @($args); $global:LASTEXITCODE = 1 }
 & (Get-Module StarkHUD) { $script:WingetFlags = @('--disable-interactivity') }
-$null = Test-StarkWingetPackage -Id 'Rainmeter.Rainmeter'
-Assert-True ($global:StarkWingetArgs -contains '--disable-interactivity') 'Il flag arriva intero a winget'
-Assert-True ($global:StarkWingetArgs -notcontains '-') 'Nessun argomento di un solo carattere'
-Remove-Item function:\winget.exe
+$line = & (Get-Module StarkHUD) { Join-StarkArguments (@('list', '--id', 'Rainmeter.Rainmeter', '-e') + @(Get-StarkWingetFlags)) }
+Assert-Equal $line 'list --id Rainmeter.Rainmeter -e --disable-interactivity' 'Il flag arriva intero a winget'
+Assert-Equal (Join-StarkArguments @('setwp', '--file', 'C:\Users\Mario Rossi\x')) 'setwp --file "C:\Users\Mario Rossi\x"' 'Percorsi con spazi tra virgolette'
 & (Get-Module StarkHUD) { $script:WingetFlags = $null }
 
 Write-Host 'Sicurezza'
