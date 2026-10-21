@@ -317,11 +317,11 @@ Get-Content (Join-Path $OutDir 'gui-stdout.txt'), (Join-Path $OutDir 'gui-stderr
 foreach ($tab in 'TabTheme', 'TabComponents', 'TabTweaks') {
     $png = $shot -replace '\.png$', "-$tab.png"
     Check (Test-Path $png) "Screenshot interfaccia: $tab"
-    if ((Test-Path $png) -and $env:STARK_PRINT_SCREENSHOTS -and $tab -ne 'TabTweaks') {
+    if ((Test-Path $png) -and $env:STARK_PRINT_SCREENSHOTS -and $tab -eq 'TabTheme') {
         # anteprima JPEG ridotta stampata nel log (base64) per chi non puo' scaricare gli artifact
         $src = New-Object System.Windows.Media.Imaging.BitmapImage
         $src.BeginInit(); $src.UriSource = New-Object Uri $png; $src.CacheOption = 'OnLoad'; $src.EndInit()
-        $scaled = New-Object System.Windows.Media.Imaging.TransformedBitmap($src, (New-Object System.Windows.Media.ScaleTransform(0.55, 0.55)))
+        $scaled = New-Object System.Windows.Media.Imaging.TransformedBitmap($src, (New-Object System.Windows.Media.ScaleTransform(0.5, 0.5)))
         $enc = New-Object System.Windows.Media.Imaging.JpegBitmapEncoder
         $enc.QualityLevel = 72
         $enc.Frames.Add([System.Windows.Media.Imaging.BitmapFrame]::Create($scaled))

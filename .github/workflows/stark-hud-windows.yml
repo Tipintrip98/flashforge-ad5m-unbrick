@@ -41,6 +41,8 @@ jobs:
           Get-Process explorer -ErrorAction SilentlyContinue | Select-Object Id, SessionId
 
       - name: Installazione, verifica e ripristino
+        env:
+          STARK_PRINT_SCREENSHOTS: ${{ matrix.mode == 'nativo' && '1' || '' }}
         run: |
           $components = '${{ matrix.mode }}' -eq 'componenti'
           & .\tests\Test-StarkWindows.ps1 -Components:$components

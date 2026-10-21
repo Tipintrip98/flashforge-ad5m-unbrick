@@ -1324,6 +1324,8 @@ function Restore-StarkHUD {
     }
     # Windows riallinea il colore delle finestre all'accento originale solo con questo avviso
     # e solo se vede ancora il colore Stark in DWM: per questo i valori DWM non vengono riscritti.
+    # La breve pausa lascia a Windows il tempo di rileggere la chiave Accent appena ripristinata.
+    Start-Sleep -Seconds 2
     Send-StarkSettingChange 'ImmersiveColorSet'
 
     # 4) font: scarica dalla sessione prima di cancellare i file
@@ -1340,6 +1342,13 @@ function Restore-StarkHUD {
     for ($i = $s.files.Count - 1; $i -ge 0; $i--) {
         $f = $s.files[$i]
         try {
+            if ((Test-Path -LiteralPath $f.target) -and $f.target.StartsWith($fontDir, [StringComparison]::OrdinalIgnoreCase)) {
+                # la cache dei font di Windows puo' tenere aperto il file per qualche secondo
+                for ($n = 0; $n -lt 10 -and (Test-Path -LiteralPath $f.target); $n++) {
+                    try { Remove-Item -LiteralPath $f.target -Force -ErrorAction Stop }
+                    catch { [void][StarkHUD.Native]::RemoveFontResource($f.target); Send-StarkFontChange; Start-Sleep -Seconds 1 }
+                }
+            }
             if (Test-Path -LiteralPath $f.target) { Remove-Item -LiteralPath $f.target -Recurse -Force -ErrorAction Stop }
             if ($f.backup -and (Test-Path -LiteralPath $f.backup)) {
                 Copy-Item -LiteralPath $f.backup -Destination $f.target -Recurse -Force
