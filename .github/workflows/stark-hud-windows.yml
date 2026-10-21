@@ -6,6 +6,7 @@ on:
   push:
     paths:
       - 'windows-stark-ui/**'
+      - 'W/**'
       - '.github/workflows/stark-hud-windows.yml'
   workflow_dispatch:
 
@@ -53,5 +54,48 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: stark-hud-${{ matrix.os }}-${{ matrix.mode }}
+          path: windows-stark-ui/tests/out/
+          if-no-files-found: ignore
+
+  # Un solo file da scaricare e avviare: W\StarkHUD-Setup.exe (contiene tutto il pack).
+  # Viene ricostruito solo quando cambia il pack, verificato e salvato nella cartella W del branch.
+  setup-exe:
+    name: StarkHUD-Setup.exe
+    runs-on: windows-2022
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: powershell
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Costruzione (solo se il pack e' cambiato)
+        id: build
+        run: |
+          $r = & .\windows-stark-ui\tools\Build-Setup.ps1
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "built=$($r.Built.ToString().ToLower())" -Encoding Ascii
+
+      - name: Verifica dell'exe
+        run: |
+          & .\windows-stark-ui\tests\Test-StarkSetup.ps1 -Exe .\W\StarkHUD-Setup.exe
+          exit $LASTEXITCODE
+
+      - name: Salvataggio nella cartella W
+        if: steps.build.outputs.built == 'true' && github.event_name == 'push'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add W/StarkHUD-Setup.exe W/StarkHUD-Setup.sha256
+          git commit -m "W: StarkHUD-Setup.exe ricostruito dal pack attuale"
+          git push origin "HEAD:${{ github.ref_name }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stark-hud-setup-exe
           path: windows-stark-ui/tests/out/
           if-no-files-found: ignore

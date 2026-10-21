@@ -1,0 +1,21 @@
+STARK HUD - INSTALLAZIONE CON UN CLIC
+=====================================
+
+1. Scarica StarkHUD-Setup.exe (in questa cartella).
+2. Doppio clic su StarkHUD-Setup.exe.
+   Se Windows mostra "Windows ha protetto il PC": clic su "Ulteriori informazioni",
+   poi "Esegui comunque" (l'exe non ha una firma digitale a pagamento).
+3. Nell'installer scegli cosa attivare e premi INSTALLA.
+
+TORNARE A COM'ERA PRIMA
+- Riapri StarkHUD-Setup.exe e premi "Ripristina originale".
+- Oppure, da Prompt dei comandi:  StarkHUD-Setup.exe --ripristina
+
+COSA FA L'EXE
+Contiene tutto il pack Stark HUD. Lo estrae in %LOCALAPPDATA%\StarkHUD\pack
+e apre l'installer. Non serve essere amministratore e non installa nulla
+finche' non premi INSTALLA.
+
+Requisiti: Windows 10 a 64 bit (1809 o successivo).
+Codice sorgente e dettagli: cartella windows-stark-ui del repository.
+StarkHUD-Setup.sha256 serve solo a capire quando l'exe va ricostruito.

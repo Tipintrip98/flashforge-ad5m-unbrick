@@ -11,10 +11,12 @@ Pack che cambia l'interfaccia di Windows 10 in stile **HUD Stark Industries**, c
 
 ## Installazione (3 passi)
 
-1. **Scarica** questa cartella (`Code → Download ZIP`, poi estrai lo ZIP).
-2. **Doppio clic** su `Installa.cmd`.
+1. **Scarica** `StarkHUD-Setup.exe` dalla cartella [`W`](../W) del repository (un solo file, contiene tutto il pack).
+2. **Doppio clic** sull'exe. Se Windows mostra "Windows ha protetto il PC": **Ulteriori informazioni → Esegui comunque** (l'exe non ha una firma digitale a pagamento).
 3. Scegli cosa attivare e premi **INSTALLA**.
    Se compaiono richieste UAC (scaricamento delle app con winget), accettale.
+
+In alternativa: scarica questa cartella (`Code → Download ZIP`), estrai lo ZIP e fai doppio clic su `Installa.cmd`.
 
 Non servono privilegi di amministratore per il tema. Alla fine Esplora risorse si riavvia da solo per applicare barra e colori.
 
@@ -130,7 +132,7 @@ windows-stark-ui/
 ├── config/tweaks.json              catalogo ottimizzazioni (solo HKCU)
 ├── theme/                          sfondi, cursori, suoni, font
 ├── components/                     Lively, Rainmeter, Flow Launcher, TranslucentTB, Nilesoft
-├── tools/                          generatori degli asset
+├── tools/                          generatori degli asset e Build-Setup.ps1 (crea ../W/StarkHUD-Setup.exe)
 ├── tests/Test-StarkCore.ps1        test delle funzioni pure
 └── docs/                           ricerca e immagini
 ```
