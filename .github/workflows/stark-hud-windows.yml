@@ -111,7 +111,26 @@ jobs:
       - name: Integrazione con il desktop di Esplora risorse
         run: |
           & .\tests\Test-StarkShell.ps1
-          exit $LASTEXITCODE
+          if ($LASTEXITCODE -ne 2) { exit $LASTEXITCODE }
+          # il job gira senza desktop interattivo: se l'utente del runner ha una sessione con desktop, il test
+          # viene ripetuto li' con un'attivita' pianificata interattiva
+          Write-Host "Sessioni di Windows:"; query session
+          Get-Process explorer -ErrorAction SilentlyContinue | Select-Object Id, SessionId | Format-Table | Out-String | Write-Host
+          $log = Join-Path $env:TEMP 'tipaldi-shell.log'
+          $wrapper = Join-Path $env:TEMP 'tipaldi-shell.ps1'
+          Set-Content -Path $wrapper -Encoding UTF8 -Value @(
+            "& '$PWD\tests\Test-StarkShell.ps1' *> '$log'",
+            "Set-Content -Path '$log.done' -Value `$LASTEXITCODE")
+          $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$wrapper`""
+          $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
+          Register-ScheduledTask -TaskName 'TipaldiShell' -Action $action -Principal $principal -Force | Out-Null
+          Start-ScheduledTask -TaskName 'TipaldiShell'
+          $end = (Get-Date).AddMinutes(6)
+          while (-not (Test-Path "$log.done") -and (Get-Date) -lt $end) { Start-Sleep -Seconds 3 }
+          Write-Host "Stato attivita': $((Get-ScheduledTask -TaskName 'TipaldiShell').State) / $((Get-ScheduledTaskInfo -TaskName 'TipaldiShell').LastTaskResult)"
+          if (Test-Path $log) { Get-Content $log | Write-Host }
+          if (-not (Test-Path "$log.done")) { Write-Host 'Nessuna sessione interattiva disponibile sul runner.'; exit 1 }
+          exit [int](Get-Content "$log.done")
 
   # Sul runner windows-2022 winget non c'e', come sul PC dell'utente: l'installer deve installarlo da solo
   winget:

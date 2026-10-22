@@ -129,8 +129,12 @@ if (-not (Wait-Until { [ShellProbe]::FindWindow('Progman', $null) -ne [IntPtr]::
     Start-Process explorer.exe
 }
 $hasShell = Wait-Until { [ShellProbe]::FindWindow('Progman', $null) -ne [IntPtr]::Zero -and [ShellProbe]::FindWindow('Shell_TrayWnd', $null) -ne [IntPtr]::Zero } 40
+if (-not $hasShell) {
+    # sessione senza desktop interattivo (es. servizio nella sessione 0): il chiamante puo' riprovare nella sessione utente
+    Write-Host ("Nessun desktop di Esplora risorse in questa sessione (sessione {0})." -f (Get-Process -Id $PID).SessionId)
+    exit 2
+}
 Check $hasShell 'Desktop e barra delle applicazioni di Esplora risorse presenti'
-if (-not $hasShell) { exit 1 }
 Start-Sleep -Seconds 3
 Show-ShellTree 'prima di Tipaldi AI'
 
@@ -143,6 +147,18 @@ $env:TIPALDI_SKILLS = Join-Path $home2 'skills'
 @{ trackActivity = $false; autoFixSafe = $false; claudeAutoResolve = $false; overdrive = $false; organizeDownloads = $false; organizeDesktop = $false; weeklyReport = $false; hud = $true } |
     ConvertTo-Json | Set-Content -Path (Join-Path $home2 'settings.json') -Encoding UTF8
 $stateFile = Join-Path $home2 'desktop.json'
+$adv = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+$hideBefore = (Get-ItemProperty -Path $adv -Name HideIcons -ErrorAction SilentlyContinue).HideIcons
+function Get-IconsShown {
+    $v = [ShellProbe]::FindWindowEx([ShellProbe]::FindWindow('Progman', $null), [IntPtr]::Zero, 'SHELLDLL_DefView', $null)
+    if ($v -eq [IntPtr]::Zero) {
+        foreach ($h in [ShellProbe]::TopLevel()) { $x = [ShellProbe]::FindWindowEx($h, [IntPtr]::Zero, 'SHELLDLL_DefView', $null); if ($x -ne [IntPtr]::Zero) { $v = $x; break } }
+    }
+    $lv = [ShellProbe]::FindWindowEx($v, [IntPtr]::Zero, 'SysListView32', $null)
+    $lv -ne [IntPtr]::Zero -and [ShellProbe]::IsWindowVisible($lv)
+}
+$iconsBefore = Get-IconsShown
+Write-Host "Icone del desktop visibili prima: $iconsBefore (HideIcons=$hideBefore)"
 $agent = Start-Process -FilePath $Exe -WorkingDirectory (Split-Path -Parent $Exe) -PassThru
 try {
     $ready = Wait-Until { Test-Path $stateFile } 40
@@ -177,6 +193,9 @@ try {
     Check ([ShellProbe]::Cls($top) -in 'SysListView32', 'SHELLDLL_DefView', 'WorkerW', 'Progman') 'Le icone e il menu del desktop di Windows restano sopra al HUD'
 
     Save-Screen 'con Tipaldi AI'
+    $hideAfter = (Get-ItemProperty -Path $adv -Name HideIcons -ErrorAction SilentlyContinue).HideIcons
+    Check ($hideAfter -eq $hideBefore) 'Impostazione "Mostra icone del desktop" non toccata' "(HideIcons $hideBefore -> $hideAfter)"
+    Check ((Get-IconsShown) -eq $iconsBefore) 'Icone del desktop visibili come prima'
 
     # 3) clic sul desktop -> pulsante del HUD (scelto dove non c'e' un'icona)
     $events = Join-Path $home2 'events.jsonl'

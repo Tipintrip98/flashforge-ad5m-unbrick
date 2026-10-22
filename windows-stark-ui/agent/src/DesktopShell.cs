@@ -70,14 +70,16 @@ namespace TipaldiAI
         public static IntPtr FindWallpaperLayer()
         {
             IntPtr progman = FindWindow("Progman", null);
-            if (progman == IntPtr.Zero) { return IntPtr.Zero; }
-            IntPtr res;
-            // stessa richiesta che Esplora risorse fa a sé stesso prima dell'animazione dello sfondo
-            SendMessageTimeout(progman, 0x052C, new IntPtr(0xD), new IntPtr(0x1), 0x2, 1000, out res);
+            // senza la vista del desktop (Esplora risorse non è la shell, o non ha ancora creato il desktop)
+            // non si manda nulla: il desktop di Windows non va toccato finché non esiste davvero
+            if (progman == IntPtr.Zero || FindDesktopView() == IntPtr.Zero) { return IntPtr.Zero; }
             IntPtr layer = LayerAfterView();
             if (layer == IntPtr.Zero)
             {
-                SendMessageTimeout(progman, 0x052C, IntPtr.Zero, IntPtr.Zero, 0x2, 1000, out res);   // forma delle build più vecchie
+                // richiesta classica (wParam 0, lParam 0), la stessa che Esplora risorse fa prima dell'animazione
+                // dello sfondo. Altre varianti del messaggio cambiano lo stato del desktop (es. icone nascoste).
+                IntPtr res;
+                SendMessageTimeout(progman, 0x052C, IntPtr.Zero, IntPtr.Zero, 0x2, 1000, out res);
                 layer = LayerAfterView();
             }
             if (layer == IntPtr.Zero && FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null) != IntPtr.Zero)
