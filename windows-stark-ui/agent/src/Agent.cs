@@ -81,7 +81,7 @@ namespace TipaldiAI
             foreach (Issue i in h.Issues)
             {
                 FixDef f = i.FixId != null ? Fixes.Get(i.FixId) : null;
-                if (f != null && f.Safe && Settings.AutoFixSafe)
+                if (f != null && f.Safe && !f.Manual && Settings.AutoFixSafe)
                 {
                     string key = "fix:" + i.Id;
                     if ((DateTime.Now - State.GetTime(key)).TotalHours < 6) { continue; }

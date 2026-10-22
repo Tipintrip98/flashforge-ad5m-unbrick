@@ -24,7 +24,6 @@ namespace TipaldiAI
 
         public static int RunStdio()
         {
-            Console.InputEncoding = new UTF8Encoding(false);
             Stream stdout = Console.OpenStandardOutput();
             StreamWriter w = new StreamWriter(stdout, new UTF8Encoding(false));
             w.AutoFlush = true;

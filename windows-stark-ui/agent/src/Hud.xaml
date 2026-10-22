@@ -149,10 +149,10 @@
     </Grid>
 
     <!-- pannello sinistro: ora, saluto, contesto, avvio rapido -->
-    <Border x:Name="PanelLeft" Canvas.Left="60" Canvas.Top="112" Width="470" Height="520" CornerRadius="18" Background="{StaticResource PanelBg}" BorderBrush="{StaticResource PanelLine}" BorderThickness="1" Padding="28,20">
+    <Border x:Name="PanelLeft" Canvas.Left="60" Canvas.Top="112" Width="470" Height="566" CornerRadius="18" Background="{StaticResource PanelBg}" BorderBrush="{StaticResource PanelLine}" BorderThickness="1" Padding="28,20">
         <StackPanel>
             <StackPanel Orientation="Horizontal">
-                <TextBlock x:Name="ClockText" Text="00:00" FontFamily="{DynamicResource Display}" FontSize="108" Foreground="#FFFFFF" Margin="0,-14,0,-10"/>
+                <TextBlock x:Name="ClockText" Text="00:00" FontFamily="{DynamicResource Display}" FontSize="100" Foreground="#FFFFFF" Margin="0,-14,0,-12"/>
                 <TextBlock x:Name="SecondsText" Text="00" FontFamily="{DynamicResource Mono}" FontSize="26" Foreground="#38D6FF" VerticalAlignment="Bottom" Margin="10,0,0,20"/>
             </StackPanel>
             <TextBlock x:Name="DateText" FontFamily="{DynamicResource DisplayBold}" FontSize="18" Foreground="#38D6FF"/>
@@ -168,7 +168,7 @@
     </Border>
 
     <!-- spazio di lavoro: il desktop ordinato per contesto -->
-    <Border x:Name="PanelWork" Canvas.Left="60" Canvas.Top="660" Width="470" Height="372" CornerRadius="18" Background="{StaticResource PanelBg}" BorderBrush="{StaticResource PanelLine}" BorderThickness="1" Padding="22,18">
+    <Border x:Name="PanelWork" Canvas.Left="60" Canvas.Top="706" Width="470" Height="326" CornerRadius="18" Background="{StaticResource PanelBg}" BorderBrush="{StaticResource PanelLine}" BorderThickness="1" Padding="22,18">
         <DockPanel>
             <Grid DockPanel.Dock="Top" Margin="6,0,6,6">
                 <TextBlock Text="SPAZIO DI LAVORO" Style="{StaticResource Caption}"/>

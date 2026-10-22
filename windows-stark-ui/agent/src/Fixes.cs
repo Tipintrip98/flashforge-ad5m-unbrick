@@ -28,6 +28,7 @@ namespace TipaldiAI
         public string Description;
         public bool Safe;
         public bool Admin;
+        public bool Manual;     // sicura, ma solo su richiesta (apre finestre): mai in automatico
         public Func<string, FixResult> Run;
     }
 
@@ -59,7 +60,7 @@ namespace TipaldiAI
                 Description = "Cancella la cache delle anteprime di Esplora file (si ricrea da sola).", Run = a => ClearThumbnails() },
             new FixDef { Id = "flush-dns", Title = "Pulizia cache DNS", Safe = true,
                 Description = "Risolve siti che non si aprono dopo un cambio di rete.", Run = a => RunHidden("ipconfig.exe", "/flushdns", 30) },
-            new FixDef { Id = "open-security", Title = "Apri Sicurezza di Windows", Safe = true,
+            new FixDef { Id = "open-security", Title = "Apri Sicurezza di Windows", Safe = true, Manual = true,
                 Description = "Apre Sicurezza di Windows per aggiornare o riattivare la protezione.", Run = a => OpenUri("windowsdefender:") },
             new FixDef { Id = "empty-recycle-bin", Title = "Svuota il cestino", Safe = false,
                 Description = "Libera spazio. I file nel cestino non saranno più recuperabili.", Run = a => EmptyRecycleBin() },
@@ -100,6 +101,7 @@ namespace TipaldiAI
                     }
                 }
             }
+            if (f.Manual && origin == "auto") { return new FixResult(false, "\"" + f.Title + "\" parte solo su tua richiesta."); }
             FixResult r;
             try { r = f.Run(arg); }
             catch (Exception ex) { r = new FixResult(false, ex.Message); }

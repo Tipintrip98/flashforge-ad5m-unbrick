@@ -392,11 +392,11 @@ namespace TipaldiAI
             if (p == null) { return; }
             p.Children.Clear();
             double max = st.ByContext.Count > 0 ? st.ByContext.Values.Max() : 1;
-            foreach (KeyValuePair<string, double> kv in st.ByContext.Where(x => x.Key != "system").OrderByDescending(x => x.Value).Take(5))
+            foreach (KeyValuePair<string, double> kv in st.ByContext.Where(x => x.Key != "system").OrderByDescending(x => x.Value).Take(4))
             {
                 ContextDef c = Contexts.Get(kv.Key);
                 Color col = (Color)ColorConverter.ConvertFromString(c.Color);
-                Grid row = new Grid { Margin = new Thickness(0, 5, 0, 5) };
+                Grid row = new Grid { Margin = new Thickness(0, 4, 0, 4) };
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(150) });
                 row.ColumnDefinitions.Add(new ColumnDefinition());
                 row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(90) });
@@ -431,11 +431,11 @@ namespace TipaldiAI
             p.Children.Clear();
             ActivityStats st = ActivityStats.From(ActivityStore.Load(DateTime.Today.AddDays(-28), DateTime.Now));
             IEnumerable<KeyValuePair<string, double>> apps = st.ByApp.Where(a => st.AppExe.ContainsKey(a.Key) && st.AppContext[a.Key] != "system");
-            List<KeyValuePair<string, double>> ordered = apps.OrderByDescending(a => (ctx != null && st.AppContext[a.Key] == ctx ? 1e9 : 0) + a.Value).Take(6).ToList();
+            List<KeyValuePair<string, double>> ordered = apps.OrderByDescending(a => (ctx != null && st.AppContext[a.Key] == ctx ? 1e9 : 0) + a.Value).Take(5).ToList();
             foreach (KeyValuePair<string, double> a in ordered)
             {
                 string exe = st.AppExe[a.Key];
-                p.Children.Add(Tile(exe, a.Key, Contexts.Get(st.AppContext[a.Key]).Color, () => Launch(exe), 64));
+                p.Children.Add(Tile(exe, a.Key, Contexts.Get(st.AppContext[a.Key]).Color, () => Launch(exe), 56));
             }
             if (p.Children.Count == 0) { p.Children.Add(Label("Le app che usi di più compariranno qui.", 16, Dim, 1)); }
         }
@@ -574,7 +574,7 @@ namespace TipaldiAI
                     Color col = d.Health == "Integro" ? Cyan : d.Health == "Avviso" ? Gold : d.Health == "Guasto" ? Red : Dim;
                     StackPanel row = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 3, 0, 3) };
                     row.Children.Add(new Ellipse { Width = 9, Height = 9, Fill = new SolidColorBrush(col), Margin = new Thickness(0, 0, 10, 0), VerticalAlignment = VerticalAlignment.Center });
-                    TextBlock t = Label((d.Media + " " + d.Bus).Trim() + "  " + Math.Round(d.SizeGb) + " GB  ·  " + d.Health.ToUpper(Fmt.It), 15, Colors.White, 0.85);
+                    TextBlock t = Label(((d.Media == "?" ? "DISCO" : d.Media) + " " + d.Bus).Trim() + "  " + Math.Round(d.SizeGb) + " GB  ·  " + d.Health.ToUpper(Fmt.It), 15, Colors.White, 0.85);
                     t.FontFamily = (FontFamily)Resources["Mono"];
                     t.MaxWidth = 380;
                     row.Children.Add(t);
