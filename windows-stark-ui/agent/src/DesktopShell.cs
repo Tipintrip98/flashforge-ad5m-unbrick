@@ -67,6 +67,8 @@ namespace TipaldiAI
         }
 
         /// <summary>Livello sfondo dietro alle icone (WorkerW), creandolo se serve. IntPtr.Zero se la shell non c'è.</summary>
+        static IntPtr askedProgman;
+
         public static IntPtr FindWallpaperLayer()
         {
             IntPtr progman = FindWindow("Progman", null);
@@ -74,13 +76,20 @@ namespace TipaldiAI
             // non si manda nulla: il desktop di Windows non va toccato finché non esiste davvero
             if (progman == IntPtr.Zero || FindDesktopView() == IntPtr.Zero) { return IntPtr.Zero; }
             IntPtr layer = LayerAfterView();
-            if (layer == IntPtr.Zero)
+            if (layer == IntPtr.Zero && progman != askedProgman)
             {
-                // richiesta classica (wParam 0, lParam 0), la stessa che Esplora risorse fa prima dell'animazione
-                // dello sfondo. Altre varianti del messaggio cambiano lo stato del desktop (es. icone nascoste).
+                // una sola richiesta per ogni avvio di Esplora risorse. Misurato su Windows 10 (build 20348, effetti
+                // visivi spenti): solo wParam 0xD / lParam 1 crea il livello; (0,0) e (0xD,0) non fanno nulla.
+                // Nessuna delle due cambia "Mostra icone del desktop". (0,0) resta come ripiego per build più vecchie.
+                askedProgman = progman;
                 IntPtr res;
-                SendMessageTimeout(progman, 0x052C, IntPtr.Zero, IntPtr.Zero, 0x2, 1000, out res);
+                SendMessageTimeout(progman, 0x052C, new IntPtr(0xD), new IntPtr(0x1), 0x2, 1000, out res);
                 layer = LayerAfterView();
+                if (layer == IntPtr.Zero)
+                {
+                    SendMessageTimeout(progman, 0x052C, IntPtr.Zero, IntPtr.Zero, 0x2, 1000, out res);
+                    layer = LayerAfterView();
+                }
             }
             if (layer == IntPtr.Zero && FindWindowEx(progman, IntPtr.Zero, "SHELLDLL_DefView", null) != IntPtr.Zero)
             {

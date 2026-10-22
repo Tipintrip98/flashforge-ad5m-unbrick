@@ -197,6 +197,7 @@ foreach ($v in @(@(0, 0), @(0xD, 0), @(0xD, 1))) {
     [ShellProbe]::Send052C($v[0], $v[1])
     Start-Sleep -Milliseconds 800
     $layer = [ShellProbe]::LayerAfterView()
+    if ($layer -eq [IntPtr]::Zero) { $layer = [ShellProbe]::FindWindowEx([ShellProbe]::FindWindow('Progman', [NullString]::Value), [IntPtr]::Zero, 'WorkerW', [NullString]::Value) }   # Windows 11 24H2
     $hide1 = (Get-ItemProperty -Path $adv0 -Name HideIcons -ErrorAction SilentlyContinue).HideIcons
     $lv = [ShellProbe]::FindWindowEx([ShellProbe]::FindWindowEx([ShellProbe]::FindWindow('Progman', [NullString]::Value), [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value), [IntPtr]::Zero, 'SysListView32', [NullString]::Value)
     if ($lv -eq [IntPtr]::Zero) { foreach ($h in [ShellProbe]::TopLevel()) { $dv = [ShellProbe]::FindWindowEx($h, [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value); if ($dv -ne [IntPtr]::Zero) { $lv = [ShellProbe]::FindWindowEx($dv, [IntPtr]::Zero, 'SysListView32', [NullString]::Value); break } } }
