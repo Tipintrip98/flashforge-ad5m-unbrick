@@ -40,7 +40,27 @@ public static class ShellProbe
     [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
     [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
     [DllImport("user32.dll")] public static extern void mouse_event(uint f, int x, int y, uint d, IntPtr e);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr h, uint m, IntPtr w, IntPtr l, uint f, uint t, out IntPtr r);
+    [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] public static extern bool SystemParametersInfo(uint a, uint p, ref bool v, uint f);
     [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+
+    public static IntPtr LayerAfterView()
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((h, x) => {
+            if (FindWindowEx(h, IntPtr.Zero, "SHELLDLL_DefView", null) != IntPtr.Zero && Cls(h) == "WorkerW") { found = FindWindowEx(IntPtr.Zero, h, "WorkerW", null); return false; }
+            return true; }, IntPtr.Zero);
+        return found;
+    }
+
+    public static void Send052C(int w, int l)
+    {
+        IntPtr r;
+        SendMessageTimeout(FindWindow("Progman", null), 0x052C, new IntPtr(w), new IntPtr(l), 2, 1000, out r);
+    }
+
+    public static bool Spi(uint action) { bool v = false; SystemParametersInfo(action, 0, ref v, 0); return v; }
     [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
 
     public static string Cls(IntPtr h) { StringBuilder sb = new StringBuilder(128); GetClassName(h, sb, 128); return sb.ToString(); }
@@ -154,7 +174,37 @@ if (-not $hasShell) {
 }
 Check $hasShell 'Desktop e barra delle applicazioni di Esplora risorse presenti'
 Start-Sleep -Seconds 3
+# le finestre del runner (console dell'agente GitHub) coprono il desktop: ridotte a icona per la prova
+foreach ($h in [ShellProbe]::TopLevel()) {
+    if ([ShellProbe]::IsWindowVisible($h) -and [ShellProbe]::Cls($h) -in 'ConsoleWindowClass', 'CabinetWClass') { [void][ShellProbe]::ShowWindow($h, 6) }
+}
 Show-ShellTree 'prima di Tipaldi AI'
+
+# 1b) studio del messaggio 0x052C: quale variante crea il livello sfondo e cosa cambia nel desktop
+$adv0 = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
+Write-Host ("Effetti visivi: animazioni client {0}, animazioni finestre {1}, animazione menu {2}" -f [ShellProbe]::Spi(0x1042), [ShellProbe]::Spi(0x0048), [ShellProbe]::Spi(0x1002))
+function Restart-Shell {
+    Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 2
+    if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
+    [void](Wait-Until { [ShellProbe]::FindWindowEx([ShellProbe]::FindWindow('Progman', [NullString]::Value), [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value) -ne [IntPtr]::Zero } 30)
+    Start-Sleep -Seconds 3
+    foreach ($h in [ShellProbe]::TopLevel()) { if ([ShellProbe]::IsWindowVisible($h) -and [ShellProbe]::Cls($h) -eq 'CabinetWClass') { [void][ShellProbe]::ShowWindow($h, 6) } }
+}
+foreach ($v in @(@(0, 0), @(0xD, 0), @(0xD, 1))) {
+    Restart-Shell
+    $hide0 = (Get-ItemProperty -Path $adv0 -Name HideIcons -ErrorAction SilentlyContinue).HideIcons
+    [ShellProbe]::Send052C($v[0], $v[1])
+    Start-Sleep -Milliseconds 800
+    $layer = [ShellProbe]::LayerAfterView()
+    $hide1 = (Get-ItemProperty -Path $adv0 -Name HideIcons -ErrorAction SilentlyContinue).HideIcons
+    $lv = [ShellProbe]::FindWindowEx([ShellProbe]::FindWindowEx([ShellProbe]::FindWindow('Progman', [NullString]::Value), [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value), [IntPtr]::Zero, 'SysListView32', [NullString]::Value)
+    if ($lv -eq [IntPtr]::Zero) { foreach ($h in [ShellProbe]::TopLevel()) { $dv = [ShellProbe]::FindWindowEx($h, [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value); if ($dv -ne [IntPtr]::Zero) { $lv = [ShellProbe]::FindWindowEx($dv, [IntPtr]::Zero, 'SysListView32', [NullString]::Value); break } } }
+    Write-Host ("STUDIO 0x052C wParam=0x{0:X} lParam={1}: livello sfondo {2}, HideIcons {3}->{4}, icone visibili {5}" -f $v[0], $v[1],
+        $(if ($layer -ne [IntPtr]::Zero) { 'CREATO ' + [ShellProbe]::Describe($layer) } else { 'non creato' }), $hide0, $hide1, ($lv -ne [IntPtr]::Zero -and [ShellProbe]::IsWindowVisible($lv)))
+    Show-ShellTree ("dopo 0x052C(0x{0:X},{1})" -f $v[0], $v[1])
+}
+Restart-Shell
 
 # 2) Tipaldi AI con dati in una cartella di prova e protocolli automatici spenti
 $home2 = Join-Path $env:TEMP 'tipaldi-shell-test'
