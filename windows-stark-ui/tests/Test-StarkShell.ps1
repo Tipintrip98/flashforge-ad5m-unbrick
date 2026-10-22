@@ -278,6 +278,7 @@ try {
     $events = Join-Path $home2 'events.jsonl'
     $targets = [ordered]@{ BtnSkills = 'Aggiorno le skill di Claude'; BtnUndo = "Annullo l'ultimo riordino"; BtnScan = 'Scansione completa avviata' }
     $clicked = $null
+    $st = Get-Content $stateFile -Raw | ConvertFrom-Json   # posizioni aggiornate ad animazione finita
     foreach ($name in $targets.Keys) {
         $pt = $st.buttons.$name
         if (-not $pt) { continue }

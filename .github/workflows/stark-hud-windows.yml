@@ -194,6 +194,8 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A W
           git commit -m "W: TipaldiAI-Setup.exe ricostruito dal pack attuale"
+          # nel frattempo il branch puo' essere avanzato: si riparte da li' se l'exe e' ancora quello giusto
+          git pull --rebase origin "${{ github.ref_name }}"
           git push origin "HEAD:${{ github.ref_name }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

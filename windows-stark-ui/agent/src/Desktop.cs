@@ -313,7 +313,10 @@ namespace TipaldiAI
             }
             DesktopLog.Write(string.Format("aggancio: modalita' {0}, finestra 0x{1:X}, livello 0x{2:X}, area {3},{4}-{5},{6}",
                 Mode, h.ToInt64(), l.ToInt64(), wa.Left, wa.Top, wa.Right, wa.Bottom));
-            Dispatcher.BeginInvoke(new Action(WriteShellState), DispatcherPriority.ApplicationIdle);
+            // posizioni dei pulsanti salvate ad animazione di avvio finita (i pannelli scorrono ancora)
+            DispatcherTimer later = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            later.Tick += (s, e) => { later.Stop(); WriteShellState(); };
+            later.Start();
         }
 
         /// <summary>Area di lavoro meno le colonne delle icone vere del desktop: il HUD non finisce sotto le icone.</summary>
