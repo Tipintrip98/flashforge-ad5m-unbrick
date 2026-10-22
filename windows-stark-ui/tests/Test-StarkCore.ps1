@@ -104,6 +104,14 @@ $threw = $false
 try { Set-StarkRegValue -Path 'HKLM:\SOFTWARE\Test' -Name 'x' -Value 1 -Type DWord } catch { $threw = $_.Exception.Message -match 'solo in HKCU' }
 Assert-True $threw 'Rifiuta scritture fuori da HKCU'
 
+Write-Host 'API di Windows (regressione: $null passato come "" a FindWindow)'
+$src = Get-Content -Raw -LiteralPath (Join-Path (Split-Path -Parent $PSScriptRoot) 'src\StarkHUD.psm1')
+Assert-True ($src -notmatch '::FindWindow(Ex)?\([^\r\n]*\$null') 'Nessun $null come nome di finestra (PowerShell lo trasforma in stringa vuota)'
+$desk = Get-StarkDesktopView
+if ([Diagnostics.Process]::GetProcessesByName('explorer').Count -and (& (Get-Module StarkHUD) { Initialize-StarkNative; [StarkHUD.Native]::FindWindow('Shell_TrayWnd', [NullString]::Value) }) -ne [IntPtr]::Zero) {
+    Assert-True ($desk -ne [IntPtr]::Zero) 'Desktop di Esplora risorse trovato quando la shell e'' attiva'
+}
+
 Write-Host ''
 Write-Host ("Risultato: {0} ok, {1} falliti" -f $script:passed, $script:failed) -ForegroundColor $(if ($script:failed) { 'Red' } else { 'Green' })
 exit $script:failed

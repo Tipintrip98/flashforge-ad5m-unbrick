@@ -425,12 +425,12 @@ public static class FileLock {
 function Get-StarkDesktopView {
     <# Finestra che contiene le icone del desktop (sotto Progman o sotto un WorkerW). #>
     Initialize-StarkNative
-    $view = [StarkHUD.Native]::FindWindowEx([StarkHUD.Native]::FindWindow('Progman', $null), [IntPtr]::Zero, 'SHELLDLL_DefView', $null)
+    $view = [StarkHUD.Native]::FindWindowEx([StarkHUD.Native]::FindWindow('Progman', [NullString]::Value), [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value)
     $worker = [IntPtr]::Zero
     while ($view -eq [IntPtr]::Zero) {
-        $worker = [StarkHUD.Native]::FindWindowEx([IntPtr]::Zero, $worker, 'WorkerW', $null)
+        $worker = [StarkHUD.Native]::FindWindowEx([IntPtr]::Zero, $worker, 'WorkerW', [NullString]::Value)
         if ($worker -eq [IntPtr]::Zero) { break }
-        $view = [StarkHUD.Native]::FindWindowEx($worker, [IntPtr]::Zero, 'SHELLDLL_DefView', $null)
+        $view = [StarkHUD.Native]::FindWindowEx($worker, [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value)
     }
     $view
 }

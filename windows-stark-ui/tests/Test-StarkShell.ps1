@@ -124,11 +124,11 @@ Add-Type -AssemblyName System.Windows.Forms
 
 Write-Host "== Shell di Windows: $([Environment]::OSVersion.VersionString)"
 # 1) shell attiva (sui runner Esplora risorse non sempre parte da solo)
-if (-not (Wait-Until { [ShellProbe]::FindWindow('Progman', $null) -ne [IntPtr]::Zero } 2)) {
+if (-not (Wait-Until { [ShellProbe]::FindWindow('Progman', [NullString]::Value) -ne [IntPtr]::Zero } 2)) {
     Write-Host 'Esplora risorse non attivo: lo avvio come shell.'
     Start-Process explorer.exe
 }
-$shellReady = { [ShellProbe]::FindWindow('Progman', $null) -ne [IntPtr]::Zero -and [ShellProbe]::FindWindow('Shell_TrayWnd', $null) -ne [IntPtr]::Zero }
+$shellReady = { [ShellProbe]::FindWindow('Progman', [NullString]::Value) -ne [IntPtr]::Zero -and [ShellProbe]::FindWindow('Shell_TrayWnd', [NullString]::Value) -ne [IntPtr]::Zero }
 $hasShell = Wait-Until $shellReady 20
 if (-not $hasShell) {
     # explorer.exe diventa la shell (desktop + barra) solo se Winlogon lo indica come shell; altrimenti apre una cartella
@@ -168,11 +168,11 @@ $stateFile = Join-Path $home2 'desktop.json'
 $adv = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\Advanced'
 $hideBefore = (Get-ItemProperty -Path $adv -Name HideIcons -ErrorAction SilentlyContinue).HideIcons
 function Get-IconsShown {
-    $v = [ShellProbe]::FindWindowEx([ShellProbe]::FindWindow('Progman', $null), [IntPtr]::Zero, 'SHELLDLL_DefView', $null)
+    $v = [ShellProbe]::FindWindowEx([ShellProbe]::FindWindow('Progman', [NullString]::Value), [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value)
     if ($v -eq [IntPtr]::Zero) {
-        foreach ($h in [ShellProbe]::TopLevel()) { $x = [ShellProbe]::FindWindowEx($h, [IntPtr]::Zero, 'SHELLDLL_DefView', $null); if ($x -ne [IntPtr]::Zero) { $v = $x; break } }
+        foreach ($h in [ShellProbe]::TopLevel()) { $x = [ShellProbe]::FindWindowEx($h, [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value); if ($x -ne [IntPtr]::Zero) { $v = $x; break } }
     }
-    $lv = [ShellProbe]::FindWindowEx($v, [IntPtr]::Zero, 'SysListView32', $null)
+    $lv = [ShellProbe]::FindWindowEx($v, [IntPtr]::Zero, 'SysListView32', [NullString]::Value)
     $lv -ne [IntPtr]::Zero -and [ShellProbe]::IsWindowVisible($lv)
 }
 $iconsBefore = Get-IconsShown
@@ -193,7 +193,7 @@ try {
     Check ($st.parentClass -eq 'WorkerW') 'Padre: livello WorkerW di Esplora risorse' $st.parentClass
     Check ((([ShellProbe]::Style($hud)) -band 0x40000000) -ne 0) 'Finestra figlia (WS_CHILD), non una finestra principale'
     Check ([ShellProbe]::Pid($parent) -eq (Get-Process explorer | Select-Object -First 1).Id -or [ShellProbe]::Cls($parent) -eq 'WorkerW') 'Il livello appartiene a explorer.exe'
-    $viewInParent = [ShellProbe]::FindWindowEx($parent, [IntPtr]::Zero, 'SHELLDLL_DefView', $null)
+    $viewInParent = [ShellProbe]::FindWindowEx($parent, [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value)
     Check ($viewInParent -eq [IntPtr]::Zero) 'Livello sfondo distinto da quello delle icone (SHELLDLL_DefView)'
 
     # barra delle applicazioni / Alt+Tab: nessuna finestra principale visibile di Tipaldi AI senza WS_EX_TOOLWINDOW
