@@ -92,6 +92,7 @@ public static class ShellProbe
     }
 
     public static IntPtr At(int x, int y) { POINT p; p.X = x; p.Y = y; return WindowFromPoint(p); }
+    public static bool IsDesktopClass(string c) { return c == "SysListView32" || c == "SHELLDLL_DefView" || c == "WorkerW" || c == "Progman"; }
 
     public static void Click(int x, int y)
     {
@@ -263,10 +264,13 @@ try {
 
     # le icone del desktop restano sopra: al centro dello schermo Windows vede il desktop, non Tipaldi AI
     Hide-Windows
-    $b = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
-    $top = [ShellProbe]::At([int]($b.Left + $b.Width / 2), [int]($b.Top + $b.Height / 2))
-    Write-Host ('  sotto il cursore al centro: ' + [ShellProbe]::Describe($top))
-    Check ([ShellProbe]::Cls($top) -in 'SysListView32', 'SHELLDLL_DefView', 'WorkerW', 'Progman') 'Le icone e il menu del desktop di Windows restano sopra al HUD'
+    # punto di prova: dove il HUD ha un pulsante (finestre del runner, es. "Proprieta' del sistema", possono coprire il centro)
+    $st0 = Get-Content $stateFile -Raw | ConvertFrom-Json
+    $probe = @($st0.buttons.PSObject.Properties | ForEach-Object { ,$_.Value } | Where-Object { [ShellProbe]::IsDesktopClass([ShellProbe]::Cls([ShellProbe]::At($_[0], $_[1]))) -or [ShellProbe]::Pid([ShellProbe]::At($_[0], $_[1])) -eq $agent.Id }) | Select-Object -First 1
+    if (-not $probe) { $wa = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea; $probe = @([int]($wa.Left + $wa.Width / 2), [int]($wa.Top + $wa.Height / 2)) }
+    $top = [ShellProbe]::At([int]$probe[0], [int]$probe[1])
+    Write-Host ("  sotto il cursore in {0},{1} (pulsante del HUD): {2}" -f $probe[0], $probe[1], [ShellProbe]::Describe($top))
+    Check ([ShellProbe]::IsDesktopClass([ShellProbe]::Cls($top))) 'Le icone e il menu del desktop di Windows restano sopra al HUD'
 
     Save-Screen 'con Tipaldi AI'
     $hideAfter = (Get-ItemProperty -Path $adv -Name HideIcons -ErrorAction SilentlyContinue).HideIcons
