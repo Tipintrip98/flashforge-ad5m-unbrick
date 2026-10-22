@@ -33,6 +33,7 @@ $script:LogFile    = $null
 $script:Logger     = $null
 $script:State      = $null
 $script:WingetFlags = $null
+$script:WingetExe  = $null
 
 # Colori del tema
 $script:AccentHex  = '#0096C7'   # colore di sistema Windows (evidenziazioni, Start)
@@ -497,7 +498,7 @@ function Test-StarkEnvironment {
         PSDesktop  = ($PSVersionTable.PSEdition -ne 'Core')
         Is64Bit    = [Environment]::Is64BitProcess
         IsAdmin    = $isAdmin
-        HasWinget  = [bool](Get-Command winget.exe -ErrorAction SilentlyContinue)
+        HasWinget  = [bool](Find-StarkWinget)
     }
 }
 
@@ -704,11 +705,68 @@ function Find-StarkExe {
     $null
 }
 
+function Find-StarkWinget {
+    <# Percorso di winget: nel PATH o nell'alias di Windows (WindowsApps). $null se manca. #>
+    param([switch]$Refresh)
+    if ($script:WingetExe -and -not $Refresh) { return $script:WingetExe }
+    $script:WingetExe = $null
+    $cmd = Get-Command winget.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($cmd) { $script:WingetExe = $cmd.Source }
+    elseif ($env:LOCALAPPDATA) {
+        $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WindowsApps\winget.exe'
+        if (Test-Path -LiteralPath $alias) { $script:WingetExe = $alias }
+    }
+    $script:WingetExe
+}
+
+function Install-StarkWinget {
+    <#
+        Installa winget ("Programma di installazione app") quando manca, dai pacchetti ufficiali Microsoft
+        pubblicati su GitHub (firmati: Windows verifica la firma). Solo per l'utente corrente, senza amministratore.
+        Le dipendenze arrivano dallo zip ufficiale della stessa release.
+    #>
+    if (Find-StarkWinget -Refresh) { return $true }
+    Write-StarkLog 'winget non è presente: lo installo dai pacchetti ufficiali Microsoft (circa 250 MB, solo per il tuo utente)...' 'info'
+    $dir = Join-Path $env:TEMP ('tipaldi-winget-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    New-Item -ItemType Directory -Path $dir -Force | Out-Null
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $web = New-Object Net.WebClient
+    $arch = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
+    try {
+        $deps = Join-Path $dir 'deps.zip'
+        $web.DownloadFile('https://github.com/microsoft/winget-cli/releases/latest/download/DesktopAppInstaller_Dependencies.zip', $deps)
+        Expand-Archive -LiteralPath $deps -DestinationPath (Join-Path $dir 'deps') -Force
+        $appx = @(Get-ChildItem -LiteralPath (Join-Path $dir 'deps') -Recurse -Filter *.appx | Where-Object { $_.FullName -match "\\$arch\\" -or $_.Name -match "[._]$arch[._]" })
+        if ($appx.Count -eq 0) { throw "dipendenze $arch non trovate nello zip di Microsoft" }
+        foreach ($a in $appx) {
+            try { Add-AppxPackage -Path $a.FullName -ErrorAction Stop }
+            catch { if ($_.Exception.Message -notmatch '0x80073D06|higher version|versione superiore') { throw } }   # gia' presente in versione piu' recente: va bene
+        }
+        $bundle = Join-Path $dir 'Microsoft.DesktopAppInstaller.msixbundle'
+        $web.DownloadFile('https://github.com/microsoft/winget-cli/releases/latest/download/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle', $bundle)
+        Add-AppxPackage -Path $bundle -ErrorAction Stop
+    } catch {
+        Write-StarkLog "winget non installato ($($_.Exception.Message)). Installa 'Programma di installazione app' dal Microsoft Store e riprova." 'warn'
+        return $false
+    } finally {
+        $web.Dispose()
+        Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    for ($i = 0; $i -lt 30 -and -not (Find-StarkWinget -Refresh); $i++) { Start-Sleep -Seconds 1 }
+    if (-not (Find-StarkWinget)) {
+        Write-StarkLog 'winget installato ma non ancora disponibile: riavvia il PC e premi di nuovo INSTALLA.' 'warn'
+        return $false
+    }
+    $script:WingetFlags = $null
+    Write-StarkLog "winget pronto: $(& (Find-StarkWinget) --version 2>$null)" 'ok'
+    $true
+}
+
 function Get-StarkWingetFlags {
     <# --disable-interactivity esiste solo da winget 1.4: sulle versioni vecchie viene omesso. #>
     if ($null -eq $script:WingetFlags) {
         $script:WingetFlags = @()
-        $v = (& winget.exe --version 2>$null | Out-String).Trim()
+        $v = (& (Find-StarkWinget) --version 2>$null | Out-String).Trim()
         if ($v -match 'v?(\d+)\.(\d+)' -and ([int]$Matches[1] -gt 1 -or [int]$Matches[2] -ge 4)) { $script:WingetFlags = @('--disable-interactivity') }
     }
     $script:WingetFlags
@@ -728,9 +786,10 @@ function Invoke-StarkWinget {
         Restituisce codice di uscita, testo prodotto e se e' scaduto il tempo.
     #>
     param([Parameter(Mandatory)][string[]]$Arguments, [int]$TimeoutSec = 900)
+    if (-not (Find-StarkWinget)) { return [pscustomobject]@{ ExitCode = -2; Output = 'winget non disponibile'; TimedOut = $false } }
     $all = @($Arguments) + @(Get-StarkWingetFlags)
     $log = Join-Path $env:TEMP ('starkhud-winget-{0}' -f [guid]::NewGuid().ToString('N'))
-    $p = Start-Process -FilePath 'winget.exe' -ArgumentList (Join-StarkArguments $all) -NoNewWindow -PassThru `
+    $p = Start-Process -FilePath (Find-StarkWinget) -ArgumentList (Join-StarkArguments $all) -NoNewWindow -PassThru `
         -RedirectStandardOutput "$log.out" -RedirectStandardError "$log.err"
     $null = $p.Handle  # senza questo PowerShell 5.1 perde il codice di uscita
     $timedOut = -not $p.WaitForExit($TimeoutSec * 1000)
@@ -770,8 +829,8 @@ function Stop-StarkAppProcesses {
 function Install-StarkApp {
     <# Installa un'app con winget (solo se manca) e ricorda che l'ha installata Tipaldi AI. #>
     param([Parameter(Mandatory)][string]$Id, [Parameter(Mandatory)][string]$Name)
-    if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
-        Write-StarkLog "winget non trovato: installa 'Programma di installazione app' dal Microsoft Store, poi riprova ($Name)." 'warn'
+    if (-not (Find-StarkWinget) -and -not (Install-StarkWinget)) {
+        Write-StarkLog "$Name saltato: serve winget." 'warn'
         return $false
     }
     if (Test-StarkWingetPackage -Id $Id) {
@@ -1371,6 +1430,8 @@ function Install-StarkHUD {
     if ($Options.StartupSound) { $steps.Add(@{ T = 'Suono di avvio'; A = { Set-StarkStartupSound -SoundDir (Join-Path $script:AssetRoot 'sounds') } }) }
     if ($Options.LockScreen) { $steps.Add(@{ T = 'Schermata di blocco'; A = { Set-StarkLockScreen -ImagePath (Join-Path $script:AssetRoot 'wallpapers\StarkHUD-Lock-4K.jpg') } }) }
     if ($Options.Tweaks -and @($Options.Tweaks).Count) { $steps.Add(@{ T = 'Ottimizzazioni'; A = { Invoke-StarkTweaks -Ids @($Options.Tweaks) } }) }
+    $needsWinget = $Options.TranslucentTB -or $Options.Rainmeter -or $Options.Lively -or $Options.FlowLauncher -or $Options.Windhawk -or $Options.Nilesoft
+    if ($needsWinget -and -not (Find-StarkWinget -Refresh)) { $steps.Add(@{ T = 'Programma di installazione app (winget)'; A = { [void](Install-StarkWinget) } }) }
     if ($Options.TranslucentTB) { $steps.Add(@{ T = 'Barra trasparente'; A = { Install-StarkTranslucentTB } }) }
     if ($Options.TaskbarX) { $steps.Add(@{ T = 'Icone centrate'; A = { Install-StarkTaskbarX } }) }
     if ($Options.ShellIcons) { $steps.Add(@{ T = 'Icone di sistema'; A = { Set-StarkShellIcons -IconDir (Join-Path $script:AssetRoot 'icons') } }) }

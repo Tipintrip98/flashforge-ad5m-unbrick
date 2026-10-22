@@ -89,6 +89,33 @@ jobs:
           path: windows-stark-ui/tests/out/
           if-no-files-found: ignore
 
+  # Sul runner windows-2022 winget non c'e', come sul PC dell'utente: l'installer deve installarlo da solo
+  winget:
+    name: winget assente (installazione automatica)
+    runs-on: windows-2022
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: powershell
+        working-directory: windows-stark-ui
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installa winget e un'app del Livello 2
+        run: |
+          Import-Module .\src\StarkHUD.psm1 -Force
+          Set-StarkLogger { param($m, $l, $p) Write-Host ("[{0}] {1}" -f $l.ToUpper(), $m) }
+          $before = Find-StarkWinget -Refresh
+          Write-Host "winget prima: $before"
+          if (-not (Install-StarkWinget)) { exit 1 }
+          $exe = Find-StarkWinget -Refresh
+          Write-Host "winget dopo: $exe"
+          & $exe --version
+          if (-not (Test-StarkEnvironment).HasWinget) { Write-Host 'HasWinget falso'; exit 1 }
+          $ok = Install-StarkApp -Id 'Flow-Launcher.Flow-Launcher' -Name 'Flow Launcher'
+          if (-not $ok) { exit 1 }
+          if (-not (Test-StarkWingetPackage -Id 'Flow-Launcher.Flow-Launcher')) { Write-Host 'Flow Launcher non risulta installato'; exit 1 }
+          Write-Host 'OK: winget installato da solo e app del Livello 2 installata.'
+
   # Un solo file da scaricare e avviare: W\TipaldiAI-Setup.exe (contiene tutto il pack).
   # Viene ricostruito solo quando cambia il pack, verificato e salvato nella cartella W del branch.
   setup-exe:

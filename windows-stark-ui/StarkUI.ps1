@@ -225,19 +225,14 @@ $check = { param($ok) if ($ok) { '[ OK ]' } else { '[ !! ]' } }
 $osLine = if ($envInfo.IsWin10) { "Windows 10 build $($envInfo.Build)" } elseif ($envInfo.IsWin11) { "Windows 11 build $($envInfo.Build) (parziale)" } else { "Build $($envInfo.Build) non supportata" }
 $lines = @(
     ('{0} {1}' -f (& $check ($envInfo.IsWin10 -or $envInfo.IsWin11)), $osLine)
-    ('{0} winget {1}' -f (& $check $envInfo.HasWinget), $(if ($envInfo.HasWinget) { 'disponibile' } else { 'mancante: solo Livello 1' }))
+    ('{0} winget {1}' -f (& $check $envInfo.HasWinget), $(if ($envInfo.HasWinget) { 'disponibile' } else { 'mancante: lo installo io se scegli app del Livello 2' }))
     ('[ OK ] Schermo {0}x{1} @{2}%' -f $display.Width, $display.Height, [int]($display.Scale * 100))
     ('[ OK ] Backup automatico di ogni modifica')
 )
 $state = Join-Path $env:LOCALAPPDATA 'StarkHUD\state\backup.json'
 if (Test-Path $state) { $lines += '[ ** ] Tipaldi AI gia'' installato' }
 $ui.InfoText.Text = $lines -join "`n"
-if (-not $envInfo.HasWinget) {
-    foreach ($k in 'Lively', 'LivelyAudio', 'Rainmeter', 'FlowLauncher', 'TranslucentTB', 'Nilesoft', 'Windhawk') {
-        $script:Toggles[$k].IsChecked = $false
-        $script:Toggles[$k].IsEnabled = $false
-    }
-}
+
 
 # --- Navigazione -----------------------------------------------------------------------
 $panels = @{ TabTheme = 'PanelTheme'; TabComponents = 'PanelComponents'; TabTweaks = 'PanelTweaks'; TabLog = 'PanelLog' }
