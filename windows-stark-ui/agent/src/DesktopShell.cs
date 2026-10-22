@@ -307,17 +307,32 @@ namespace TipaldiAI
             why = "";
             if (host.IsDisposed || host.RootVisual == null) { why = "finestra chiusa"; return null; }
             if (!DesktopShell.IsDesktopSurface(WindowFromPoint(p))) { why = "non sul desktop"; return null; }
-            UIElement top = host.RootVisual as UIElement;
-            if (top == null) { why = "radice assente"; return null; }
-            Point local;
-            try { local = top.PointFromScreen(new Point(p.X, p.Y)); } catch (InvalidOperationException ex) { why = ex.Message; return null; }
-            HitTestResult hit = VisualTreeHelper.HitTest(top, local);
-            DependencyObject d = hit != null ? hit.VisualHit : null;
-            why = string.Format("punto HUD {0:0},{1:0}, colpito {2}", local.X, local.Y, d != null ? d.GetType().Name : "niente");
-            while (d != null && !(d is ButtonBase)) { d = VisualTreeHelper.GetParent(d); }
-            ButtonBase b = d as ButtonBase;
-            if (b != null && !(b.IsEnabled && b.IsVisible)) { why += ", pulsante non attivo"; return null; }
-            return b;
+            // confronto diretto con il rettangolo a schermo di ogni pulsante (stesse coordinate di desktop.json)
+            ButtonBase found = null;
+            int seen = 0;
+            Stack<DependencyObject> todo = new Stack<DependencyObject>();
+            todo.Push(host.RootVisual);
+            while (todo.Count > 0)
+            {
+                DependencyObject d = todo.Pop();
+                ButtonBase b = d as ButtonBase;
+                if (b != null && b.IsVisible && b.IsEnabled && b.ActualWidth > 0)
+                {
+                    seen++;
+                    try
+                    {
+                        Point a = b.PointToScreen(new Point(0, 0));
+                        Point z = b.PointToScreen(new Point(b.ActualWidth, b.ActualHeight));
+                        if (p.X >= Math.Min(a.X, z.X) && p.X <= Math.Max(a.X, z.X) && p.Y >= Math.Min(a.Y, z.Y) && p.Y <= Math.Max(a.Y, z.Y)) { found = b; }
+                    }
+                    catch (InvalidOperationException) { }
+                    continue;   // niente pulsanti dentro i pulsanti
+                }
+                int n = VisualTreeHelper.GetChildrenCount(d);
+                for (int i = 0; i < n; i++) { todo.Push(VisualTreeHelper.GetChild(d, i)); }
+            }
+            why = seen + " pulsanti controllati";
+            return found;
         }
 
         static bool OnDesktopIcon(POINT p)
