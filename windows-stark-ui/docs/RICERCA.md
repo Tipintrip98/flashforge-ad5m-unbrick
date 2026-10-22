@@ -99,6 +99,46 @@ Questi test hanno trovato errori che un controllo del codice non avrebbe mostrat
 | 13 | Il backup del colore DWM veniva letto subito dopo aver scritto l'accento, ma Windows riallinea DWM in pochi istanti | A volte il backup conteneva già il ciano: il ripristino credeva DWM a posto (o aspettava 50 s un colore già giusto) | Backup letto prima di qualsiasi modifica dell'accento |
 | 14 | Il servizio di sistema "Cache dei font di Windows" (FontCache) tiene aperti i font dell'utente anche dopo `RemoveFontResource` (individuato con Gestione riavvio di Windows) | Il ripristino aspettava 10 s per ogni font e poi rimandava la cancellazione | Il servizio non si tocca: font disinstallati subito, file cancellati al prossimo accesso, un solo messaggio chiaro. Una reinstallazione prima del riavvio annulla la cancellazione rimandata |
 | 15 | Un exe senza console (app grafica) non può impostare `Console.InputEncoding` | Il server MCP di Tipaldi AI si chiudeva subito con "handle non valido": Claude Desktop non l'avrebbe mai visto | Lettura di stdin direttamente in UTF-8, senza toccare la console; test che avvia il server MCP come Claude Desktop |
+| 16 | PowerShell passa `$null` come stringa vuota `""` ai parametri stringa delle API di Windows | `FindWindow('Progman', $null)` cercava una finestra col titolo vuoto: il desktop non veniva **mai** trovato e "Desktop pulito" falliva sempre con "desktop non trovato" | `[NullString]::Value` per i nomi di finestra + test che vieta lo schema |
+| 17 | Quando mostra o nasconde le icone, Esplora risorse riscrive nel registro le sue impostazioni di Visualizza | "Mostra estensioni dei file", applicata subito prima, tornava come prima | Icone del desktop applicate per prime, poi le altre ottimizzazioni |
+| 18 | Il suono di avvio partiva con `powershell.exe` dall'Esecuzione automatica | A ogni accesso compariva per un attimo PowerShell nella barra delle applicazioni | Suonato da `TipaldiAI.exe --play` (app grafica senza finestre) + test: niente in Esecuzione automatica punta a PowerShell |
+| 19 | La finestra dell'installer apparteneva a `powershell.exe` | Windows la mostrava con icona e nome di PowerShell | `TipaldiAI-Setup.exe` ospita il motore di Windows PowerShell 5.1 al suo interno: la finestra è sua. Da `Installa.cmd` l'installer imposta un proprio AppUserModelID e la propria icona |
+
+## 6. Il desktop di Esplora risorse, studiato dal vivo
+
+Il desktop Tipaldi AI deve essere lo **sfondo** di Windows, non una finestra appoggiata sopra.
+La struttura del desktop non è documentata da Microsoft. Per questo è stata misurata sulla shell vera dei runner (Esplora risorse avviato come shell nella sessione interattiva) con `tests/Test-StarkShell.ps1`: gerarchia delle finestre prima e dopo, catture reali dello schermo.
+
+**Struttura misurata.**
+
+```
+Windows 10 (build 20348)                         Windows 11 24H2 (build 26100)
+WorkerW                                          Progman
+  SHELLDLL_DefView      menu, trascinamento        SHELLDLL_DefView
+    SysListView32       le icone                     SysListView32
+WorkerW                 livello sfondo  <- HUD     WorkerW            livello sfondo <- HUD
+Progman
+```
+
+**Il messaggio `0x052C` a Progman.** Fa creare a Esplora risorse il livello sfondo, lo stesso che usa per l'animazione del cambio di sfondo. Ogni variante è stata provata su un Esplora risorse appena riavviato, con gli effetti visivi spenti:
+
+| wParam, lParam | Windows 10 (20348) | Windows 11 24H2 | Effetti collaterali |
+|---|---|---|---|
+| 0, 0 (la forma che si trova in giro) | nessun livello | nessun livello | nessuno |
+| 0xD, 0 | nessun livello | nessun livello | nessuno |
+| **0xD, 1** | **livello creato** dietro alle icone | **livello creato** come figlio di Progman, sotto le icone | nessuno: "Mostra icone" e icone visibili invariati |
+
+Tipaldi AI manda `(0xD, 1)` una sola volta per ogni avvio di Esplora risorse. Usa `(0, 0)` come ripiego per le build più vecchie e non manda nulla se il desktop non esiste ancora.
+
+**Cosa ne deriva (verificato con catture reali):**
+
+- Il HUD è una finestra figlia del livello sfondo. Non compare nella barra delle applicazioni né in Alt+Tab, resta con Win+D e non sta mai sopra le finestre.
+- Icone, menu col tasto destro e trascinamento restano quelli di Windows, sopra al HUD.
+- Il HUD lascia libere le colonne delle icone vere. Le conta con `LVM_GETITEMCOUNT` e `LVM_GETITEMSPACING`, messaggi senza puntatori: nessuna memoria scritta dentro explorer.exe.
+- I clic sul desktop arrivano sempre a Esplora risorse. Un hook del mouse di sola lettura li inoltra ai pulsanti del HUD, ma solo se sotto il cursore c'è il desktop e non un'icona (controllo con UI Automation) né un'altra finestra.
+- Esplora risorse riavviato: il livello sfondo sparisce e la finestra del HUD con lui. Tipaldi AI se ne accorge (handle della finestra e avviso `TaskbarCreated`), la ricrea e si riaggancia in meno di un secondo.
+- App e file aperti dal HUD partono tramite la vista del desktop (`IShellFolderViewDual.ShellExecute`), come un doppio clic su un'icona. Così vanno in primo piano.
+- Nessuna DLL dentro explorer.exe: solo messaggi di finestra, `SetParent` e API pubbliche. In `logs\desktop.log` restano agganci, riavvii e clic, per la diagnosi.
 
 Il punto 12 è stato chiarito con un esperimento dedicato su una macchina pulita. L'accento veniva cambiato uno stimolo alla volta (registro, avvisi di sistema, sfondo, schermata di blocco, riavvio di Esplora risorse), misurando dopo ognuno il colore che DWM aveva in memoria.
 Lo stesso esperimento ha mostrato che `SetUserColorPreference` non è esportata da `uxtheme.dll` sulle versioni recenti. Le soluzioni che girano online e la usano quindi non funzionano.

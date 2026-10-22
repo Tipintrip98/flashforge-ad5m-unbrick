@@ -37,7 +37,7 @@ Il ripristino riporta indietro tema, colori, sfondo, icone, cursori, suoni, font
 
 | Funzione | Cosa fa | Quando |
 |---|---|---|
-| **Desktop futuristico** | Reattore animato con anelli CPU/RAM, rete e disco, contesto di lavoro attuale, avvio rapido delle app che usi di più, desktop ordinato per contesto, console AI | Sempre, sotto le finestre (resta visibile con Win+D) |
+| **Desktop futuristico** | Reattore animato con anelli CPU/RAM, rete e disco, contesto di lavoro attuale, avvio rapido delle app che usi di più, desktop ordinato per contesto, console AI | Sempre: è lo sfondo di Windows (livello sfondo di Esplora risorse, dietro alle icone). Non è una finestra: niente barra delle applicazioni né Alt+Tab, resta con Win+D, le icone e il menu del desktop restano quelli di Windows |
 | **Diagnosi** | Salute dei dischi fisici (SSD/HDD/NVMe), previsione guasti S.M.A.R.T., settori danneggiati ed errori NTFS nel registro eventi, spazio libero, antivirus, riavvii in sospeso, memoria, app bloccate, integrità di Windows | Rapida ogni 10 minuti, completa ogni ora e a richiesta |
 | **Riparazioni sicure** | Pulizia dei file temporanei, riavvio di Esplora risorse, cache di icone e anteprime, cache DNS | **In automatico** |
 | **Riparazioni con conferma** | SFC, DISM, CHKDSK, ottimizzazione delle unità, chiusura di app bloccate, svuotamento del cestino | Solo dopo il tuo **sì** sul desktop, anche quando le chiede Claude |
@@ -172,6 +172,7 @@ windows-stark-ui/
 ├── agent/                          app Tipaldi AI (C#): desktop, diagnosi, riparazioni, attività, report, skill, MCP
 ├── tools/                          generatori degli asset (build-icons.js per le icone) e Build-Setup.ps1 (crea ../W/TipaldiAI-Setup.exe)
 ├── tests/Test-StarkCore.ps1        test delle funzioni pure
+├── tests/Test-StarkShell.ps1       desktop Tipaldi AI dentro la shell vera di Esplora risorse (gerarchia, clic, riavvii)
 └── docs/                           ricerca e immagini
 ```
 
@@ -194,6 +195,7 @@ Test:
 - **Test su Windows reale.** A richiesta, GitHub Actions avvia due macchine Windows usa e getta ed esegue `tests/Test-StarkWindows.ps1`:
   - **Windows Server 2022** (build 20348, stessa base di Windows 10): tema nativo e ottimizzazioni;
   - **Windows Server 2025**: tema più tutte le app (Rainmeter, Lively, Flow Launcher, TranslucentTB, TaskbarX, Nilesoft), installate e poi disinstallate.
+  - su entrambe, `tests/Test-StarkShell.ps1` avvia Esplora risorse come shell vera e controlla il desktop Tipaldi AI: livello sfondo dietro alle icone, niente barra delle applicazioni, icone e menu di Windows sopra, clic inoltrati ai pulsanti, riaggancio dopo il riavvio di Esplora risorse. Stampa catture reali dello schermo (vedi `docs/RICERCA.md`, sezione 6).
 - **Cosa controlla il test:**
   - cursori, suoni, font e XAML caricati con le API di Windows;
   - ogni modifica verificata dopo l'installazione;
