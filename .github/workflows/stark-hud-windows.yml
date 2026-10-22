@@ -1,8 +1,8 @@
-# Stark HUD - test su Windows reale (runner GitHub usa e getta)
+# Tipaldi AI - test su Windows reale (runner GitHub usa e getta)
 # Installa il pack, lo verifica con le API di Windows, lo ripristina e confronta il registro.
-name: Stark HUD - test Windows
+name: Tipaldi AI - test Windows
 
-# Solo avvio manuale (Actions -> "Stark HUD - test Windows" -> Run workflow):
+# Solo avvio manuale (Actions -> "Tipaldi AI - test Windows" -> Run workflow):
 # nessuna esecuzione automatica, quindi nessun minuto consumato senza che tu lo chieda.
 on:
   workflow_dispatch:
@@ -30,6 +30,41 @@ jobs:
       - name: Test unitari (Windows PowerShell 5.1)
         run: .\tests\Test-StarkCore.ps1
 
+      - name: "Tipaldi AI: compilazione"
+        run: .\agent\build.ps1
+
+      - name: "Tipaldi AI: autotest"
+        run: |
+          $out = Join-Path $PWD 'tests\out\selftest'
+          $p = Start-Process -FilePath .\agent\bin\TipaldiAI.exe -ArgumentList @('--selftest', "`"$out`"") -PassThru -RedirectStandardOutput selftest.txt -RedirectStandardError selftest-err.txt
+          $null = $p.Handle; $p.WaitForExit()
+          Get-Content selftest.txt, selftest-err.txt
+          exit $p.ExitCode
+
+      - name: "Tipaldi AI: desktop"
+        run: |
+          New-Item -ItemType Directory -Path tests\out -Force | Out-Null
+          $png = Join-Path $PWD 'tests\out\tipaldi-desktop.png'
+          $p = Start-Process -FilePath .\agent\bin\TipaldiAI.exe -ArgumentList @('--hud-screenshot', "`"$png`"") -PassThru -RedirectStandardError hud-err.txt
+          $null = $p.Handle
+          if (-not $p.WaitForExit(120000)) { $p | Stop-Process -Force; Write-Host 'timeout'; exit 1 }
+          Get-Content hud-err.txt
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $png)) { exit 1 }
+          if ('${{ matrix.mode }}' -eq 'nativo') {
+            Add-Type -AssemblyName System.Drawing
+            $img = [Drawing.Image]::FromFile($png)
+            $small = New-Object Drawing.Bitmap 1280, 720
+            $g = [Drawing.Graphics]::FromImage($small); $g.InterpolationMode = 'HighQualityBicubic'; $g.DrawImage($img, 0, 0, 1280, 720); $g.Dispose()
+            $codec = [Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
+            $ep = New-Object Drawing.Imaging.EncoderParameters 1
+            $ep.Param[0] = New-Object Drawing.Imaging.EncoderParameter ([Drawing.Imaging.Encoder]::Quality), 82L
+            $ms = New-Object IO.MemoryStream
+            $small.Save($ms, $codec, $ep)
+            Write-Host '=====BEGIN HUD====='
+            Write-Host ([Convert]::ToBase64String($ms.ToArray()))
+            Write-Host '=====END HUD====='
+          }
+
       - name: Ambiente
         run: |
           [Environment]::OSVersion.VersionString
@@ -54,10 +89,10 @@ jobs:
           path: windows-stark-ui/tests/out/
           if-no-files-found: ignore
 
-  # Un solo file da scaricare e avviare: W\StarkHUD-Setup.exe (contiene tutto il pack).
+  # Un solo file da scaricare e avviare: W\TipaldiAI-Setup.exe (contiene tutto il pack).
   # Viene ricostruito solo quando cambia il pack, verificato e salvato nella cartella W del branch.
   setup-exe:
-    name: StarkHUD-Setup.exe
+    name: TipaldiAI-Setup.exe
     runs-on: windows-2022
     timeout-minutes: 20
     permissions:
@@ -68,6 +103,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: "Tipaldi AI: compilazione"
+        run: .\windows-stark-ui\agent\build.ps1
+
       - name: Costruzione (solo se il pack e' cambiato)
         id: build
         run: |
@@ -76,7 +114,7 @@ jobs:
 
       - name: Verifica dell'exe
         run: |
-          & .\windows-stark-ui\tests\Test-StarkSetup.ps1 -Exe .\W\StarkHUD-Setup.exe
+          & .\windows-stark-ui\tests\Test-StarkSetup.ps1 -Exe .\W\TipaldiAI-Setup.exe
           exit $LASTEXITCODE
 
       - name: Salvataggio nella cartella W
@@ -84,8 +122,8 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add W/StarkHUD-Setup.exe W/StarkHUD-Setup.sha256
-          git commit -m "W: StarkHUD-Setup.exe ricostruito dal pack attuale"
+          git add -A W
+          git commit -m "W: TipaldiAI-Setup.exe ricostruito dal pack attuale"
           git push origin "HEAD:${{ github.ref_name }}"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 

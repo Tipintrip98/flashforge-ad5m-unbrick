@@ -2,3 +2,5 @@
 .DS_Store
 Thumbs.db
 *.tmp
+windows-stark-ui/agent/bin/
+windows-stark-ui/tests/out/

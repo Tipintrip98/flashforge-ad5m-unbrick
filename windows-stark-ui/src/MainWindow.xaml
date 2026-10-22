@@ -1,6 +1,6 @@
-<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Stark HUD - Windows 10 UI Pack"
+        Title="Tipaldi AI - Setup"
         Width="1100" Height="720" MinWidth="940" MinHeight="640"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ResizeMode="CanResizeWithGrip" WindowStartupLocation="CenterScreen"
@@ -8,7 +8,7 @@
         TextOptions.TextFormattingMode="Display">
 
     <Window.Resources>
-        <!-- Palette Stark HUD -->
+        <!-- Palette Tipaldi AI -->
         <SolidColorBrush x:Key="Accent" Color="#38D6FF" />
         <SolidColorBrush x:Key="AccentDeep" Color="#0096C7" />
         <SolidColorBrush x:Key="Gold" Color="#F2B544" />
@@ -304,7 +304,7 @@
                         <Ellipse Width="8" Height="8" Fill="{StaticResource Accent}" VerticalAlignment="Center">
                             <Ellipse.Effect><DropShadowEffect BlurRadius="10" ShadowDepth="0" Color="#38D6FF" Opacity="0.9" /></Ellipse.Effect>
                         </Ellipse>
-                        <TextBlock Text="STARK HUD  //  SETUP" Margin="12,0,0,0" Foreground="{StaticResource Muted}" FontFamily="{DynamicResource Mono}" FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock Text="TIPALDI AI  //  SETUP" Margin="12,0,0,0" Foreground="{StaticResource Muted}" FontFamily="{DynamicResource Mono}" FontSize="12" VerticalAlignment="Center" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,16,0">
                         <Button x:Name="BtnMin" Style="{StaticResource ChromeButton}" Content="&#xE921;" ToolTip="Riduci a icona" />
@@ -376,10 +376,10 @@
                     </Canvas>
 
                     <StackPanel Grid.Row="1" Margin="2,18,0,0">
-                        <TextBlock Text="STARK HUD" Foreground="{StaticResource Text}" FontFamily="{DynamicResource Display}" FontWeight="Light" FontSize="46" />
+                        <TextBlock Text="TIPALDI AI" Foreground="{StaticResource Text}" FontFamily="{DynamicResource Display}" FontWeight="Light" FontSize="46" />
                         <TextBlock Text="WINDOWS 10  //  UI PACK" Foreground="{StaticResource Accent}" FontFamily="{DynamicResource Mono}" FontSize="12" Margin="2,0,0,0" />
                         <TextBlock Foreground="{StaticResource Muted}" FontSize="12.5" TextWrapping="Wrap" Margin="2,14,8,0"
-                                   Text="Interfaccia futuristica ispirata a Stark Industries, con la pulizia di Apple TV e HyperOS. Nessun file di sistema modificato: ogni cambiamento si annulla con un clic." />
+                                   Text="Il tuo PC in stile Stark: desktop HUD con intelligenza artificiale, diagnosi e riparazioni automatiche, collegato a Claude. Nessun file di sistema modificato: ogni cambiamento si annulla con un clic." />
                     </StackPanel>
 
                     <Border Grid.Row="2" VerticalAlignment="Bottom" Margin="0,0,8,14" CornerRadius="16" Background="#0A1117" BorderBrush="{StaticResource Hairline}" BorderThickness="1" Padding="16,12">
@@ -443,7 +443,7 @@
                         </Grid>
                     </StackPanel>
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <CheckBox x:Name="ChkRemoveApps" Style="{StaticResource Toggle}" Margin="0,0,10,0" ToolTip="Al ripristino disinstalla anche le app installate da Stark HUD" />
+                        <CheckBox x:Name="ChkRemoveApps" Style="{StaticResource Toggle}" Margin="0,0,10,0" ToolTip="Al ripristino disinstalla anche le app installate da Tipaldi AI" />
                         <TextBlock Text="Rimuovi anche le app" Foreground="{StaticResource Muted}" FontSize="12" VerticalAlignment="Center" Margin="0,0,18,0" />
                         <Button x:Name="BtnRestore" Style="{StaticResource GhostButton}" Height="44" Content="Ripristina originale" Margin="0,0,12,0" />
                         <Button x:Name="BtnInstall" Style="{StaticResource PrimaryButton}" Height="44" MinWidth="160" Content="INSTALLA" />

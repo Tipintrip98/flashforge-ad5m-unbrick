@@ -1,5 +1,5 @@
 ﻿<#
-    Stark HUD - test delle funzioni pure (nessuna modifica al sistema).
+    Tipaldi AI - test delle funzioni pure (nessuna modifica al sistema).
     Funziona con Windows PowerShell 5.1 e con PowerShell 7 (anche su Linux/macOS).
 
     Uso:  powershell -ExecutionPolicy Bypass -File tests\Test-StarkCore.ps1

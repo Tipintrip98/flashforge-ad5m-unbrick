@@ -1,5 +1,5 @@
 ﻿<#
-    Stark HUD - test d'integrazione su Windows reale.
+    Tipaldi AI - test d'integrazione su Windows reale.
 
     ATTENZIONE: installa davvero il pack e poi lo ripristina.
     Da eseguire solo su una macchina usa e getta (VM, Windows Sandbox, runner CI).
@@ -32,7 +32,7 @@ function Check([bool]$Condition, [string]$Name, [string]$Detail = '') {
         $script:fail++
         $script:failures.Add("$Name $Detail")
         Write-Host "  FAIL $Name $Detail" -ForegroundColor Red
-        if ($env:GITHUB_ACTIONS) { Write-Host "::error title=Stark HUD::$Name $Detail" }
+        if ($env:GITHUB_ACTIONS) { Write-Host "::error title=Tipaldi AI::$Name $Detail" }
     }
 }
 function Section([string]$Title) { Write-Host ''; Write-Host "=== $Title ===" -ForegroundColor Cyan }
@@ -62,6 +62,7 @@ $Watch = @(
     'Software\Microsoft\GameBar'
     'Software\Policies\Microsoft\Windows\Explorer'
     'Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+    'Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID'
     'System\GameConfigStore'
 )
 # Valori che Windows ricalcola da solo (cache dello sfondo, indice della ricerca): esclusi dal confronto
@@ -193,6 +194,12 @@ $o.RestorePoint = $true
 $o.City = 'Roma'
 foreach ($k in 'Rainmeter', 'Lively', 'FlowLauncher', 'TranslucentTB', 'TaskbarX', 'Nilesoft', 'LivelyAudio') { $o[$k] = [bool]$Components }
 $o.Windhawk = $false
+# Tipaldi AI sul runner: niente riparazioni, riordini o piano energetico automatici (cambierebbero la macchina di test)
+$tipHome = Join-Path $env:LOCALAPPDATA 'TipaldiAI'
+New-Item -ItemType Directory -Path $tipHome -Force | Out-Null
+Set-Content -Path (Join-Path $tipHome 'settings.json') -Encoding UTF8 -Value '{"autoFixSafe":false,"claudeAutoResolve":false,"overdrive":false,"organizeDownloads":false,"organizeDesktop":false,"weeklyReport":false,"skills":false,"hud":true}'
+$claudeCfg = Join-Path $env:APPDATA 'Claude\claude_desktop_config.json'
+$claudeCfgBefore = Test-Path $claudeCfg
 $t = Measure-Command { Install-StarkHUD -Options $o }
 Write-Host ("Durata installazione: {0:N0} s" -f $t.TotalSeconds)
 Check ($installErrors.Count -eq 0) 'Installazione senza errori' ($installErrors -join ' | ')
@@ -202,7 +209,7 @@ Section '3a. Verifica tema nativo'
 $arrow = Get-RegValue 'Control Panel\Cursors' 'Arrow'
 Check ($arrow -like '*\cursors\arrow.cur' -and (Test-Path $arrow)) 'Cursore Arrow' $arrow
 Check ((Get-RegValue 'Control Panel\Cursors' 'Wait') -like '*busy.ani') 'Cursore Wait animato'
-$scheme = Get-RegValue 'Control Panel\Cursors\Schemes' 'Stark HUD'
+$scheme = Get-RegValue 'Control Panel\Cursors\Schemes' 'Tipaldi AI'
 Check ($scheme -and ($scheme -split ',').Count -eq 17) 'Schema cursori con 17 voci'
 Check ((Get-RegValue 'AppEvents\Schemes' '') -eq 'StarkHUD') 'Schema suoni attivo'
 $ast = Get-RegValue 'AppEvents\Schemes\Apps\.Default\SystemAsterisk\.Current' ''
@@ -227,7 +234,32 @@ if (Test-Path $themeFile) {
 $wall = Get-RegValue 'Control Panel\Desktop' 'Wallpaper'
 Check ($wall -like '*StarkHUD-Desktop-*.jpg') 'Sfondo del desktop applicato' $wall
 $startup = [Environment]::GetFolderPath('Startup')
-Check (Test-Path (Join-Path $startup 'Stark HUD - suono di avvio.lnk')) 'Collegamento suono di avvio'
+Check (Test-Path (Join-Path $startup 'Tipaldi AI - suono di avvio.lnk')) 'Collegamento suono di avvio'
+
+Section '3a2. Verifica Tipaldi AI'
+$tipExe = Join-Path $tipHome 'app\TipaldiAI.exe'
+Check (Test-Path $tipExe) 'TipaldiAI.exe installato'
+Check (Test-Path (Join-Path $tipHome 'app\icons\video.ico')) 'Icone dei contesti accanto all''exe'
+Check (Test-Path (Join-Path $startup 'Tipaldi AI.lnk')) 'Tipaldi AI all''avvio di Windows'
+$cfg = if (Test-Path $claudeCfg) { Get-Content $claudeCfg -Raw | ConvertFrom-Json } else { $null }
+Check ($cfg -and $cfg.mcpServers.'tipaldi-ai'.command -eq $tipExe -and $cfg.mcpServers.'tipaldi-ai'.args[0] -eq '--mcp') 'Server MCP registrato in Claude Desktop' "$(if ($cfg) { $cfg | ConvertTo-Json -Depth 5 -Compress })"
+Start-Sleep -Seconds 3
+Check (@(Get-Process TipaldiAI -ErrorAction SilentlyContinue).Count -ge 1) 'Tipaldi AI in esecuzione'
+Check ((Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{20D04FE0-3AEA-1069-A2D8-08002B30309D}\DefaultIcon' '') -like '*thispc.ico,0') 'Icona Tipaldi AI per Questo PC'
+Check ((Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\{645FF040-5081-101B-9F08-00AA002F954E}\DefaultIcon' 'full') -like '*recycle-full.ico,0') 'Icona Tipaldi AI per il Cestino pieno'
+# il server MCP risponde come lo userebbe Claude Desktop
+$psi = New-Object Diagnostics.ProcessStartInfo $tipExe, '--mcp'
+$psi.UseShellExecute = $false; $psi.RedirectStandardInput = $true; $psi.RedirectStandardOutput = $true; $psi.CreateNoWindow = $true
+$psi.StandardOutputEncoding = [Text.Encoding]::UTF8
+$mcp = [Diagnostics.Process]::Start($psi)
+$mcp.StandardInput.WriteLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}')
+$mcp.StandardInput.WriteLine('{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"run_health_check","arguments":{"deep":true}}}')
+$mcp.StandardInput.Close()
+$mcpOut = $mcp.StandardOutput.ReadToEnd()
+[void]$mcp.WaitForExit(60000)
+$mcpLines = @($mcpOut -split "`n" | Where-Object { $_.Trim() })
+Check ($mcpLines.Count -eq 2 -and $mcpLines[0] -match '"tipaldi-ai"' -and $mcpLines[1] -match 'dischi_fisici') 'Server MCP: initialize e diagnosi completa' ($mcpOut.Substring(0, [Math]::Min(300, $mcpOut.Length)))
+$diag.Add('Diagnosi Tipaldi AI via MCP: ' + $(try { (($mcpLines[1] | ConvertFrom-Json).result.content[0].text | ConvertFrom-Json).stato } catch { '?' }))
 
 Section '3b. Verifica ottimizzazioni'
 foreach ($tw in $allTweaks) {
@@ -265,12 +297,12 @@ if ($Components) {
     $flowSettings = Join-Path $env:APPDATA 'FlowLauncher\Settings\Settings.json'
     if (Test-Path $flowSettings) {
         $fs = Get-Content $flowSettings -Raw -Encoding UTF8 | ConvertFrom-Json
-        Check ($fs.Theme -eq 'StarkHUD') 'Flow Launcher usa il tema Stark HUD'
+        Check ($fs.Theme -eq 'StarkHUD') 'Flow Launcher usa il tema Tipaldi AI'
     } else { Check $false 'Impostazioni Flow Launcher scritte' }
     $ttbCfg = Join-Path $env:LOCALAPPDATA 'Packages\28017CharlesMilette.TranslucentTB_v826wp6bftszj\RoamingState\settings.json'
     Check (Test-Path $ttbCfg) 'Configurazione TranslucentTB'
     Check (Test-Path (Join-Path $env:LOCALAPPDATA 'StarkHUD\apps\TaskbarX\TaskbarX.exe')) 'TaskbarX scaricato e verificato'
-    Check (Test-Path (Join-Path $startup 'Stark HUD - TaskbarX.lnk')) 'TaskbarX all''avvio'
+    Check (Test-Path (Join-Path $startup 'Tipaldi AI - TaskbarX.lnk')) 'TaskbarX all''avvio'
     $nss = Join-Path $env:ProgramFiles 'Nilesoft Shell\imports\theme.nss'
     Check ((Test-Path $nss) -and ((Get-Content $nss -Raw) -match 'Stark HUD')) 'Tema Nilesoft Shell'
 }
@@ -321,7 +353,14 @@ $fontsLost = @($fontsLeft | Where-Object { (Get-RegValue $runOnce ('StarkHUD-' +
 $diag.Add("Font da cancellare al prossimo accesso: $($fontsLeft.Count)")
 Check ($fontsLost.Count -eq 0) 'Font rimossi o programmati per la cancellazione al prossimo accesso' ($fontsLost.Name -join ', ')
 Check (-not (Test-Path $themeFile)) 'File tema rimosso'
-Check (-not (Test-Path (Join-Path $startup 'Stark HUD - suono di avvio.lnk'))) 'Collegamento di avvio rimosso'
+Check (@(Get-Process TipaldiAI -ErrorAction SilentlyContinue).Count -eq 0) 'Tipaldi AI chiuso'
+Check (-not (Test-Path (Join-Path $tipHome 'app'))) 'Programma Tipaldi AI rimosso'
+Check (-not (Test-Path (Join-Path $startup 'Tipaldi AI.lnk'))) 'Tipaldi AI tolto dall''avvio'
+$cfgAfter = if (Test-Path $claudeCfg) { Get-Content $claudeCfg -Raw } else { '' }
+Check ($cfgAfter -notmatch 'tipaldi-ai') 'Server MCP rimosso da Claude Desktop'
+Check ($claudeCfgBefore -or -not (Test-Path $claudeCfg)) 'Nessuna configurazione di Claude lasciata se prima non c''era'
+Check (Test-Path (Join-Path $tipHome 'settings.json')) 'Dati dell''utente di Tipaldi AI conservati'
+Check (-not (Test-Path (Join-Path $startup 'Tipaldi AI - suono di avvio.lnk'))) 'Collegamento di avvio rimosso'
 Check (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'StarkHUD\state'))) 'Backup archiviato'
 Check (-not (Test-Path $assets)) 'Risorse rimosse'
 $cur = Get-RegValue 'Software\Microsoft\Windows\CurrentVersion\Themes' 'CurrentTheme'
@@ -330,7 +369,7 @@ if ($Components) {
     Check (-not (Test-Path (Join-Path ([Environment]::GetFolderPath('MyDocuments')) 'Rainmeter\Skins\StarkHUD'))) 'Skin Rainmeter rimosse'
     Check (-not (Test-Path (Join-Path $env:LOCALAPPDATA 'Lively Wallpaper\Library\wallpapers\StarkReactor'))) 'Sfondo Lively rimosso'
     Check (-not (Test-Path (Join-Path $env:APPDATA 'FlowLauncher\Themes\StarkHUD.xaml'))) 'Tema Flow rimosso'
-    Check (-not (Test-Path (Join-Path $startup 'Stark HUD - TaskbarX.lnk'))) 'TaskbarX rimosso dall''avvio'
+    Check (-not (Test-Path (Join-Path $startup 'Tipaldi AI - TaskbarX.lnk'))) 'TaskbarX rimosso dall''avvio'
 }
 
 # =====================================================================================

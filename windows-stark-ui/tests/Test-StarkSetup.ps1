@@ -1,13 +1,13 @@
 <#
-    Stark HUD - verifica di W\StarkHUD-Setup.exe su Windows.
+    Tipaldi AI - verifica di W\TipaldiAI-Setup.exe su Windows.
 
       1. l'exe estrae esattamente i file del pack attuale (stesso contenuto, nessun file in piu' o in meno)
       2. l'exe apre l'installer in modalita' test e lo chiude senza errori (screenshot di ogni scheda)
 
-    Uso:  powershell -ExecutionPolicy Bypass -File tests\Test-StarkSetup.ps1 [-Exe ..\W\StarkHUD-Setup.exe]
+    Uso:  powershell -ExecutionPolicy Bypass -File tests\Test-StarkSetup.ps1 [-Exe ..\W\TipaldiAI-Setup.exe]
 #>
 param(
-    [string]$Exe = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'W\StarkHUD-Setup.exe'),
+    [string]$Exe = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) 'W\TipaldiAI-Setup.exe'),
     [string]$OutDir = (Join-Path $PSScriptRoot 'out')
 )
 $ErrorActionPreference = 'Stop'
@@ -17,7 +17,7 @@ function Check([bool]$Condition, [string]$Name, [string]$Detail = '') {
     else {
         $script:fail++
         Write-Host "  FAIL $Name $Detail" -ForegroundColor Red
-        if ($env:GITHUB_ACTIONS) { Write-Host "::error title=StarkHUD-Setup.exe::$Name $Detail" }
+        if ($env:GITHUB_ACTIONS) { Write-Host "::error title=TipaldiAI-Setup.exe::$Name $Detail" }
     }
 }
 function Invoke-Exe([string[]]$Arguments) {
@@ -29,7 +29,7 @@ function Invoke-Exe([string[]]$Arguments) {
 }
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 $Exe = (Resolve-Path -LiteralPath $Exe).Path
-Write-Host ("StarkHUD-Setup.exe: {0:N1} MB" -f ((Get-Item -LiteralPath $Exe).Length / 1MB))
+Write-Host ("TipaldiAI-Setup.exe: {0:N1} MB" -f ((Get-Item -LiteralPath $Exe).Length / 1MB))
 
 # 1) contenuto
 $expected = & (Join-Path (Split-Path -Parent $PSScriptRoot) 'tools\Build-Setup.ps1') -ListOnly
@@ -41,6 +41,8 @@ Check ($found.Count -eq $expected.Count) 'Numero di file uguale al pack' "($($fo
 $diff = foreach ($k in $expected.Keys) {
     $x = Join-Path $dir $k
     if (-not (Test-Path -LiteralPath $x)) { "manca $k"; continue }
+    # i binari compilati cambiano a ogni compilazione: per loro basta che ci siano
+    if ($k -like 'agent\bin\*') { continue }
     if ((Get-FileHash -LiteralPath $x).Hash -ne (Get-FileHash -LiteralPath $expected[$k]).Hash) { "diverso $k" }
 }
 Check (@($diff).Count -eq 0) 'Contenuto identico al pack attuale' (@($diff | Select-Object -First 5) -join ', ')
@@ -51,9 +53,9 @@ $shot = Join-Path $OutDir 'setup-exe.png'
 $code = Invoke-Exe @('--test', "`"$shot`"")
 Check ($code -eq 0) 'Installer avviato dall''exe e chiuso senza errori' "(codice $code)"
 Check (@(Get-ChildItem -LiteralPath $OutDir -Filter 'setup-exe-*.png').Count -ge 3) 'Screenshot delle schede'
-Check (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'StarkHUD\pack\StarkUI.ps1')) 'Pack estratto in %LOCALAPPDATA%\StarkHUD\pack'
+Check (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'TipaldiAI\pack\StarkUI.ps1')) 'Pack estratto in %LOCALAPPDATA%\TipaldiAI\pack'
 
 Write-Host ''
 if ($fail) { Write-Host "$fail controlli falliti" -ForegroundColor Red; exit 1 }
-Write-Host 'StarkHUD-Setup.exe verificato.' -ForegroundColor Green
+Write-Host 'TipaldiAI-Setup.exe verificato.' -ForegroundColor Green
 exit 0

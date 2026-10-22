@@ -1,12 +1,12 @@
-// Stark HUD - StarkHUD-Setup.exe
+// Tipaldi AI - TipaldiAI-Setup.exe
 // Un solo file da scaricare: contiene il pack completo (pack.zip incorporato), lo estrae in
-// %LOCALAPPDATA%\StarkHUD\pack e apre l'installer grafico (StarkUI.ps1, Windows PowerShell 5.1).
+// %LOCALAPPDATA%\TipaldiAI\pack e apre l'installer grafico (StarkUI.ps1, Windows PowerShell 5.1).
 // Non richiede privilegi di amministratore e non installa nulla da solo: decide l'utente nell'installer.
 //
-//   StarkHUD-Setup.exe                 apre l'installer
-//   StarkHUD-Setup.exe --ripristina    ripristino d'emergenza (come Ripristina.cmd)
-//   StarkHUD-Setup.exe --estrai DIR    estrae soltanto il pack in DIR (verifica in CI)
-//   StarkHUD-Setup.exe --test PNG      estrae e apre l'installer in modalita' test, con screenshot
+//   TipaldiAI-Setup.exe                 apre l'installer
+//   TipaldiAI-Setup.exe --ripristina    ripristino d'emergenza (come Ripristina.cmd)
+//   TipaldiAI-Setup.exe --estrai DIR    estrae soltanto il pack in DIR (verifica in CI)
+//   TipaldiAI-Setup.exe --test PNG      estrae e apre l'installer in modalita' test, con screenshot
 //
 // Compilato da tools\Build-Setup.ps1 con il compilatore C# incluso in Windows (.NET Framework 4).
 using System;
@@ -16,16 +16,16 @@ using System.IO.Compression;
 using System.Reflection;
 using System.Windows.Forms;
 
-[assembly: AssemblyTitle("Stark HUD - installer")]
+[assembly: AssemblyTitle("Tipaldi AI - installer")]
 [assembly: AssemblyDescription("Tema per Windows 10 in stile HUD futuristico. Progetto fan-made non ufficiale.")]
-[assembly: AssemblyProduct("Stark HUD")]
+[assembly: AssemblyProduct("Tipaldi AI")]
 [assembly: AssemblyCopyright("MIT License")]
 [assembly: AssemblyVersion("1.0.0.0")]
 [assembly: AssemblyFileVersion("1.0.0.0")]
 
 static class StarkSetup
 {
-    const string Title = "Stark HUD";
+    const string Title = "Tipaldi AI";
 
     [STAThread]
     static int Main(string[] args)
@@ -40,7 +40,7 @@ static class StarkSetup
                 return 0;
             }
 
-            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"StarkHUD\pack");
+            string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), @"TipaldiAI\pack");
             try
             {
                 Extract(dir);
@@ -48,12 +48,12 @@ static class StarkSetup
             catch (IOException)
             {
                 // un installer gia' aperto tiene in uso i file della versione precedente
-                MessageBox.Show("L'installer Stark HUD e' gia' aperto.\nChiudilo e riprova.", Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("L'installer Tipaldi AI e' gia' aperto.\nChiudilo e riprova.", Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return 1;
             }
             catch (UnauthorizedAccessException)
             {
-                MessageBox.Show("L'installer Stark HUD e' gia' aperto.\nChiudilo e riprova.", Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("L'installer Tipaldi AI e' gia' aperto.\nChiudilo e riprova.", Title, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return 1;
             }
 

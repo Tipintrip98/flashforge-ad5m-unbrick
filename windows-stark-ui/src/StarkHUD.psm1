@@ -1,6 +1,6 @@
 ﻿#Requires -Version 5.1
 <#
-    Stark HUD - motore di installazione / ripristino.
+    Tipaldi AI - motore di installazione / ripristino.
 
     Principi di sicurezza:
       * Scrive solo in HKCU (utente corrente) e nelle cartelle dell'utente.
@@ -13,11 +13,20 @@
 
 $script:PackRoot   = Split-Path -Parent $PSScriptRoot
 $script:Version    = '1.0.0'
-$script:Product    = 'Stark HUD'
+$script:Product    = 'Tipaldi AI'
 $script:SchemeKey  = 'StarkHUD'
 # fuori da Windows (test) si usa la cartella temporanea
 $script:InstallRoot = Join-Path $(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }) 'StarkHUD'
 $script:StateDir   = Join-Path $script:InstallRoot 'state'
+# app Tipaldi AI (desktop, diagnosi, AI): programma in app\, dati dell'utente accanto
+$script:TipaldiHome = Join-Path $(if ($env:LOCALAPPDATA) { $env:LOCALAPPDATA } else { [IO.Path]::GetTempPath() }) 'TipaldiAI'
+# icone di sistema per il solo utente (come "Impostazioni icone del desktop" > Cambia icona)
+$script:ShellIcons = [ordered]@{
+    '{20D04FE0-3AEA-1069-A2D8-08002B30309D}' = [ordered]@{ '' = 'thispc' }
+    '{645FF040-5081-101B-9F08-00AA002F954E}' = [ordered]@{ '' = 'recycle'; 'empty' = 'recycle'; 'full' = 'recycle-full' }
+    '{F02C1A0D-BE21-4350-88B0-7367FC96EF3C}' = [ordered]@{ '' = 'network' }
+    '{59031a47-3f72-44a7-89c5-5595fe6b30ee}' = [ordered]@{ '' = 'user' }
+}
 $script:StateFile  = Join-Path $script:StateDir 'backup.json'
 $script:LogDir     = Join-Path $script:InstallRoot 'logs'
 $script:LogFile    = $null
@@ -166,9 +175,9 @@ function New-StarkThemeContent {
     )
     $argb = '0X{0:X8}' -f (Get-StarkArgb -Hex $AccentHex -Alpha 0xC4)
     $sb = New-Object System.Text.StringBuilder
-    [void]$sb.AppendLine('; Stark HUD - tema generato da StarkUI.ps1 (fan made, non ufficiale)')
+    [void]$sb.AppendLine('; Tipaldi AI - tema generato da StarkUI.ps1 (fan made, non ufficiale)')
     [void]$sb.AppendLine('[Theme]')
-    [void]$sb.AppendLine('DisplayName=Stark HUD')
+    [void]$sb.AppendLine('DisplayName=Tipaldi AI')
     [void]$sb.AppendLine('ThemeId={7B0A8F12-5C3E-4D7A-9E21-53A7C0DE5A01}')
     [void]$sb.AppendLine('')
     [void]$sb.AppendLine('[Control Panel\Desktop]')
@@ -183,7 +192,7 @@ function New-StarkThemeContent {
             [void]$sb.AppendLine(('{0}={1}' -f $role, [IO.Path]::Combine($CursorDir, $script:CursorRoles[$role])))
         }
         [void]$sb.AppendLine(('Link={0}' -f [IO.Path]::Combine($CursorDir, 'link.cur')))
-        [void]$sb.AppendLine('DefaultValue=Stark HUD')
+        [void]$sb.AppendLine('DefaultValue=Tipaldi AI')
         [void]$sb.AppendLine('')
     }
     [void]$sb.AppendLine('[VisualStyles]')
@@ -204,7 +213,7 @@ function New-StarkThemeContent {
     if ($SoundDir) {
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine('[Sounds]')
-        [void]$sb.AppendLine('SchemeName=Stark HUD')
+        [void]$sb.AppendLine('SchemeName=Tipaldi AI')
         foreach ($ev in $script:SoundEvents) {
             [void]$sb.AppendLine('')
             [void]$sb.AppendLine(('[AppEvents\Schemes\Apps\{0}\{1}]' -f $ev.App, $ev.Event))
@@ -232,7 +241,7 @@ function Get-StarkRainmeterLayout {
         @{ Name = 'Control'; X = [int]($left + (220 + 20 + 320 + 20) * $s); Y = $cardsY }
     )
     $sb = New-Object System.Text.StringBuilder
-    [void]$sb.AppendLine("; Stark HUD - layout generato per ${ScreenWidth}x${ScreenHeight}, scala $s")
+    [void]$sb.AppendLine("; Tipaldi AI - layout generato per ${ScreenWidth}x${ScreenHeight}, scala $s")
     foreach ($r in $rows) {
         [void]$sb.AppendLine('')
         [void]$sb.AppendLine("[StarkHUD\$($r.Name)]")
@@ -286,12 +295,13 @@ function Get-StarkPreset {
     $tweaks = @(Get-StarkTweaks | Where-Object { $_.default } | ForEach-Object { $_.id })
     $o = @{
         Theme = $true; Cursors = $true; Sounds = $true; Fonts = $true; LockScreen = $true; StartupSound = $true
-        Rainmeter = $true; Lively = $true; LivelyAudio = $false; FlowLauncher = $true; TranslucentTB = $true
+        TipaldiAI = $true; ShellIcons = $true
+        Rainmeter = $false; Lively = $false; LivelyAudio = $false; FlowLauncher = $true; TranslucentTB = $true
         TaskbarX = $false; Windhawk = $false; Nilesoft = $false
         Tweaks = $tweaks; RestorePoint = $true; RestartExplorer = $true; City = ''; Clock24 = $true
     }
     if ($Name -eq 'Minimal') {
-        foreach ($k in 'Rainmeter', 'Lively', 'FlowLauncher', 'TranslucentTB') { $o[$k] = $false }
+        foreach ($k in 'TipaldiAI', 'ShellIcons', 'Rainmeter', 'Lively', 'FlowLauncher', 'TranslucentTB') { $o[$k] = $false }
     }
     if ($Name -eq 'Full') {
         foreach ($k in 'TaskbarX', 'Nilesoft', 'LivelyAudio') { $o[$k] = $true }
@@ -332,6 +342,8 @@ public static extern IntPtr FindWindowEx(IntPtr hParent, IntPtr hAfter, string l
 public static extern bool IsWindowVisible(IntPtr hWnd);
 [DllImport("user32.dll")]
 public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+[DllImport("shell32.dll")]
+public static extern void SHChangeNotify(int wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);
 '@
 }
 
@@ -528,7 +540,7 @@ function Save-StarkState {
 
 function Get-StarkHkcuSubKey {
     param([Parameter(Mandatory)][string]$Path)
-    if ($Path -notmatch '^HKCU:\\(.+)$') { throw "Stark HUD scrive solo in HKCU: $Path" }
+    if ($Path -notmatch '^HKCU:\\(.+)$') { throw "Tipaldi AI scrive solo in HKCU: $Path" }
     $Matches[1]
 }
 
@@ -607,7 +619,7 @@ function Set-StarkRegValue {
 function Backup-StarkFile {
     <#
         Salva una copia di un file (o registra che non esisteva) prima di sovrascriverlo.
-        -Leftover: il file e' un residuo di Stark HUD stesso (es. font in attesa di cancellazione): non va salvato.
+        -Leftover: il file e' un residuo di Tipaldi AI stesso (es. font in attesa di cancellazione): non va salvato.
     #>
     param([Parameter(Mandatory)][string]$Target, [switch]$Leftover)
     $s = Get-StarkState
@@ -712,7 +724,7 @@ function Join-StarkArguments {
 
 function Invoke-StarkWinget {
     <#
-        Esegue winget con un limite di tempo: un installer bloccato non deve mai bloccare Stark HUD.
+        Esegue winget con un limite di tempo: un installer bloccato non deve mai bloccare Tipaldi AI.
         Restituisce codice di uscita, testo prodotto e se e' scaduto il tempo.
     #>
     param([Parameter(Mandatory)][string[]]$Arguments, [int]$TimeoutSec = 900)
@@ -756,7 +768,7 @@ function Stop-StarkAppProcesses {
 }
 
 function Install-StarkApp {
-    <# Installa un'app con winget (solo se manca) e ricorda che l'ha installata Stark HUD. #>
+    <# Installa un'app con winget (solo se manca) e ricorda che l'ha installata Tipaldi AI. #>
     param([Parameter(Mandatory)][string]$Id, [Parameter(Mandatory)][string]$Name)
     if (-not (Get-Command winget.exe -ErrorAction SilentlyContinue)) {
         Write-StarkLog "winget non trovato: installa 'Programma di installazione app' dal Microsoft Store, poi riprova ($Name)." 'warn'
@@ -787,7 +799,7 @@ function Install-StarkApp {
 
 function Copy-StarkAssets {
     $dst = Join-Path $script:InstallRoot 'theme'
-    foreach ($d in 'wallpapers', 'cursors', 'sounds', 'fonts') {
+    foreach ($d in 'wallpapers', 'cursors', 'sounds', 'fonts', 'icons') {
         $target = Join-Path $dst $d
         New-Item -ItemType Directory -Path $target -Force | Out-Null
         Copy-Item -Path (Join-Path $script:PackRoot "theme\$d\*") -Destination $target -Recurse -Force
@@ -808,7 +820,7 @@ function Register-StarkPendingDelete {
 }
 
 function Clear-StarkPendingDelete {
-    <# Annulla una cancellazione rimandata. Vero se ce n'era una (il file e' allora un residuo di Stark HUD). #>
+    <# Annulla una cancellazione rimandata. Vero se ce n'era una (il file e' allora un residuo di Tipaldi AI). #>
     param([Parameter(Mandatory)][string]$Path)
     $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Software\Microsoft\Windows\CurrentVersion\RunOnce', $true)
     if (-not $key) { return $false }
@@ -848,17 +860,17 @@ function Set-StarkCursors {
         Set-StarkRegValue -Path $base -Name $role -Value $p -Type ExpandString
         $p
     }
-    Set-StarkRegValue -Path $base -Name '' -Value 'Stark HUD' -Type String
+    Set-StarkRegValue -Path $base -Name '' -Value 'Tipaldi AI' -Type String
     Set-StarkRegValue -Path $base -Name 'Scheme Source' -Value 1 -Type DWord
-    Set-StarkRegValue -Path "$base\Schemes" -Name 'Stark HUD' -Value ($paths -join ',') -Type ExpandString
+    Set-StarkRegValue -Path "$base\Schemes" -Name 'Tipaldi AI' -Value ($paths -join ',') -Type ExpandString
     [void][StarkHUD.Native]::SystemParametersInfo(0x0057, 0, $null, 0x03)  # SPI_SETCURSORS
-    Write-StarkLog 'Cursori Stark HUD attivi (17 puntatori, animati per attesa e caricamento).' 'ok'
+    Write-StarkLog 'Cursori Tipaldi AI attivi (17 puntatori, animati per attesa e caricamento).' 'ok'
 }
 
 function Set-StarkSounds {
     param([string]$SoundDir)
     $root = 'HKCU:\AppEvents\Schemes'
-    Set-StarkRegValue -Path "$root\Names\$script:SchemeKey" -Name '' -Value 'Stark HUD' -Type String
+    Set-StarkRegValue -Path "$root\Names\$script:SchemeKey" -Name '' -Value 'Tipaldi AI' -Type String
     foreach ($ev in $script:SoundEvents) {
         $file = Join-Path $SoundDir $ev.File
         $evKey = "$root\Apps\$($ev.App)\$($ev.Event)"
@@ -866,18 +878,87 @@ function Set-StarkSounds {
         Set-StarkRegValue -Path "$evKey\.Current" -Name '' -Value $file -Type ExpandString
     }
     Set-StarkRegValue -Path $root -Name '' -Value $script:SchemeKey -Type String
-    Write-StarkLog 'Schema suoni Stark HUD attivo (notifiche "vetro", errori morbidi, cestino "dissolvenza").' 'ok'
+    Write-StarkLog 'Schema suoni Tipaldi AI attivo (notifiche "vetro", errori morbidi, cestino "dissolvenza").' 'ok'
 }
 
 function Set-StarkStartupSound {
     param([string]$SoundDir)
     $startup = [Environment]::GetFolderPath('Startup')
-    $lnk = Join-Path $startup 'Stark HUD - suono di avvio.lnk'
+    $lnk = Join-Path $startup 'Tipaldi AI - suono di avvio.lnk'
     Backup-StarkFile -Target $lnk
     $wav = (Join-Path $SoundDir 'startup.wav').Replace("'", "''")
     $cmd = "-NoProfile -NonInteractive -WindowStyle Hidden -Command `"(New-Object Media.SoundPlayer '$wav').PlaySync()`""
-    New-StarkShortcut -Path $lnk -Target "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments $cmd -WindowStyle 7 -Description 'Stark HUD power-up'
+    New-StarkShortcut -Path $lnk -Target "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments $cmd -WindowStyle 7 -Description 'Tipaldi AI power-up'
     Write-StarkLog 'Suono "power-up" del reattore all''accesso attivato.' 'ok'
+}
+
+function Get-StarkTipaldiExe { Join-Path $script:TipaldiHome 'app\TipaldiAI.exe' }
+
+function Stop-StarkTipaldi {
+    <# Chiude Tipaldi AI in modo ordinato (salva l'ultima attivita', rimette il piano energetico), poi forzando. #>
+    $exe = Get-StarkTipaldiExe
+    if (-not (Get-Process TipaldiAI -ErrorAction SilentlyContinue)) { return }
+    if (Test-Path -LiteralPath $exe) {
+        try { $p = Start-Process -FilePath $exe -ArgumentList '--stop' -PassThru -WindowStyle Hidden; $null = $p.Handle; [void]$p.WaitForExit(15000) } catch { }
+    }
+    for ($i = 0; $i -lt 10 -and (Get-Process TipaldiAI -ErrorAction SilentlyContinue); $i++) { Start-Sleep -Milliseconds 500 }
+    Get-Process TipaldiAI -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}
+
+function Invoke-StarkTipaldi {
+    param([Parameter(Mandatory)][string]$Arguments, [int]$TimeoutSec = 120)
+    $p = Start-Process -FilePath (Get-StarkTipaldiExe) -ArgumentList $Arguments -PassThru -WindowStyle Hidden
+    $null = $p.Handle
+    if (-not $p.WaitForExit($TimeoutSec * 1000)) { $p | Stop-Process -Force -ErrorAction SilentlyContinue; return -1 }
+    $p.ExitCode
+}
+
+function Install-StarkTipaldiAI {
+    <#
+        Tipaldi AI: desktop futuristico, diagnosi di dischi e integrita', riparazioni sicure automatiche,
+        attivita' e contesti di lavoro, report settimanale, skill per Claude, server MCP per Claude.
+        Solo cartelle dell'utente: %LOCALAPPDATA%\TipaldiAI e la cartella Esecuzione automatica.
+    #>
+    $bin = Join-Path $script:PackRoot 'agent\bin'
+    if (-not (Test-Path -LiteralPath (Join-Path $bin 'TipaldiAI.exe'))) {
+        Write-StarkLog 'Compilo Tipaldi AI con il compilatore C# di Windows...' 'info'
+        $null = & (Join-Path $script:PackRoot 'agent\build.ps1') -Out $bin
+    }
+    Stop-StarkTipaldi
+    $app = Join-Path $script:TipaldiHome 'app'
+    Set-StarkExtra 'tipaldiApp' $app -IfMissing
+    New-Item -ItemType Directory -Path $app -Force | Out-Null
+    Copy-Item -Path (Join-Path $bin '*') -Destination $app -Recurse -Force
+    $exe = Get-StarkTipaldiExe
+
+    $lnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'Tipaldi AI.lnk'
+    Backup-StarkFile -Target $lnk
+    New-StarkShortcut -Path $lnk -Target $exe -WorkingDir $app -Description 'Tipaldi AI'
+
+    $code = Invoke-StarkTipaldi -Arguments '--register'
+    if ($code -eq 0) {
+        Set-StarkExtra 'tipaldiClaude' $true
+        Write-StarkLog 'Tipaldi AI collegato a Claude Desktop (server MCP "tipaldi-ai"). Riavvia Claude Desktop per vederlo.' 'ok'
+    } else {
+        Write-StarkLog "Collegamento a Claude non riuscito (codice $code): puoi rifarlo con TipaldiAI.exe --register." 'warn'
+    }
+    Start-Process -FilePath $exe -WorkingDirectory $app
+    Write-StarkLog 'Tipaldi AI attivo: desktop futuristico, diagnosi e riparazioni automatiche, contesti di lavoro, report settimanale.' 'ok'
+}
+
+function Set-StarkShellIcons {
+    <# Icone Tipaldi AI per Questo PC, Cestino, Rete e cartella utente (solo HKCU, ripristinabili). #>
+    param([Parameter(Mandatory)][string]$IconDir)
+    Initialize-StarkNative
+    foreach ($clsid in $script:ShellIcons.Keys) {
+        $path = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\CLSID\$clsid\DefaultIcon"
+        foreach ($name in $script:ShellIcons[$clsid].Keys) {
+            $ico = Join-Path $IconDir ($script:ShellIcons[$clsid][$name] + '.ico')
+            Set-StarkRegValue -Path $path -Name $name -Value "$ico,0" -Type ExpandString
+        }
+    }
+    [StarkHUD.Native]::SHChangeNotify(0x08000000, 0, [IntPtr]::Zero, [IntPtr]::Zero)   # SHCNE_ASSOCCHANGED
+    Write-StarkLog 'Icone Tipaldi AI per Questo PC, Cestino, Rete e cartella utente.' 'ok'
 }
 
 function Set-StarkWallpaper {
@@ -929,7 +1010,7 @@ function Install-StarkTheme {
     Set-StarkRegValue -Path $accent -Name 'StartColorMenu' -Value (Get-StarkAbgr -Hex '#00546F') -Type DWord
     Set-StarkRegValue -Path $dwm -Name 'ColorPrevalence' -Value 0 -Type DWord
 
-    # File .theme "Stark HUD": compare in Impostazioni > Temi per riselezionarlo in futuro.
+    # File .theme "Tipaldi AI": compare in Impostazioni > Temi per riselezionarlo in futuro.
     # Non viene applicato con un doppio clic simulato: Windows lo applicherebbe in modo asincrono,
     # anche dopo un eventuale ripristino. Tutto viene applicato qui sotto in modo diretto e sincrono.
     $themeDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Themes'
@@ -979,11 +1060,11 @@ function Set-StarkLockScreen {
                     try { $net.CopyTo($fs) } finally { $fs.Dispose(); $net.Dispose() }
                     Set-StarkExtra 'previousLockScreen' $prev
                 }
-            } catch { Write-StarkLog 'Immagine di blocco attuale non salvabile (verra'' lasciata quella Stark HUD al ripristino).' 'warn' }
+            } catch { Write-StarkLog 'Immagine di blocco attuale non salvabile (verra'' lasciata quella Tipaldi AI al ripristino).' 'warn' }
         }
         $file = & $await ([Windows.Storage.StorageFile]::GetFileFromPathAsync($ImagePath)) ([Windows.Storage.StorageFile])
         & $awaitAction ([Windows.System.UserProfile.LockScreen]::SetImageFileAsync($file))
-        Write-StarkLog 'Schermata di blocco e di accesso con il reattore Stark HUD.' 'ok'
+        Write-StarkLog 'Schermata di blocco e di accesso con il reattore Tipaldi AI.' 'ok'
     } catch {
         Write-StarkLog "Schermata di blocco non impostata: $($_.Exception.Message)" 'warn'
     }
@@ -1082,7 +1163,7 @@ function Install-StarkLively {
         if (-not $first) { $first = $dst }
     }
     Save-StarkState
-    if (-not $exe) { Write-StarkLog 'Lively.exe non trovato: apri Lively e scegli "Stark HUD - Arc Reactor" dalla libreria.' 'warn'; return }
+    if (-not $exe) { Write-StarkLog 'Lively.exe non trovato: apri Lively e scegli "Tipaldi AI - Arc Reactor" dalla libreria.' 'warn'; return }
     if (-not (Get-Process Lively -ErrorAction SilentlyContinue)) {
         Start-Process -FilePath $exe
         Start-Sleep -Seconds 8
@@ -1119,7 +1200,7 @@ function Install-StarkFlowLauncher {
 
     $exe = Find-StarkExe @('%LOCALAPPDATA%\FlowLauncher\Flow.Launcher.exe')
     if ($exe) { Start-Process -FilePath $exe }
-    Write-StarkLog 'Ricerca stile Spotlight pronta: premi Alt+Spazio (Flow Launcher, tema Stark HUD).' 'ok'
+    Write-StarkLog 'Ricerca stile Spotlight pronta: premi Alt+Spazio (Flow Launcher, tema Tipaldi AI).' 'ok'
 }
 
 function Install-StarkTranslucentTB {
@@ -1168,9 +1249,9 @@ function Install-StarkTaskbarX {
         Remove-Item -LiteralPath $zip -Force
     }
     $tbxArgs = '-tbs=0 -as=cubiceaseinout -asp=300 -lr=400'
-    $lnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'Stark HUD - TaskbarX.lnk'
+    $lnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'Tipaldi AI - TaskbarX.lnk'
     Backup-StarkFile -Target $lnk
-    New-StarkShortcut -Path $lnk -Target $exe -Arguments $tbxArgs -WorkingDir $dir -Description 'Stark HUD: icone centrate'
+    New-StarkShortcut -Path $lnk -Target $exe -Arguments $tbxArgs -WorkingDir $dir -Description 'Tipaldi AI: icone centrate'
     Set-StarkExtra 'taskbarxDir' $dir
     Save-StarkState
     Start-Process -FilePath $exe -ArgumentList $tbxArgs -WorkingDirectory $dir
@@ -1199,7 +1280,7 @@ Copy-Item -LiteralPath '$src' -Destination `$target -Force
     if ((Invoke-StarkElevated -Script $elevated -Reason 'tema del menu contestuale') -eq 0) {
         Set-StarkExtra 'nilesoftBackup' $backup
         Save-StarkState
-        Write-StarkLog 'Menu contestuale in stile Stark HUD (Nilesoft Shell, acrilico scuro).' 'ok'
+        Write-StarkLog 'Menu contestuale in stile Tipaldi AI (Nilesoft Shell, acrilico scuro).' 'ok'
     }
 }
 
@@ -1253,14 +1334,14 @@ function Invoke-StarkTweaks {
 function New-StarkRestorePoint {
     $elevated = @'
 try {
-    Checkpoint-Computer -Description 'Stark HUD - prima dell''installazione' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop
+    Checkpoint-Computer -Description 'Tipaldi AI - prima dell''installazione' -RestorePointType MODIFY_SETTINGS -ErrorAction Stop
     exit 0
 } catch { exit 2 }
 '@
     $code = Invoke-StarkElevated -Script $elevated -Reason 'punto di ripristino di sistema'
     switch ($code) {
         0 { Write-StarkLog 'Punto di ripristino di sistema creato.' 'ok' }
-        2 { Write-StarkLog 'Punto di ripristino non creato (Protezione sistema disattivata o gia'' creato nelle ultime 24 ore). Il backup Stark HUD resta comunque attivo.' 'warn' }
+        2 { Write-StarkLog 'Punto di ripristino non creato (Protezione sistema disattivata o gia'' creato nelle ultime 24 ore). Il backup Tipaldi AI resta comunque attivo.' 'warn' }
         default { }
     }
 }
@@ -1273,7 +1354,7 @@ function Install-StarkHUD {
     [CmdletBinding()]
     param([hashtable]$Options = (Get-StarkPreset 'Default'))
     $env0 = Test-StarkEnvironment
-    Write-StarkLog "Stark HUD $script:Version - avvio installazione" 'step' 0
+    Write-StarkLog "Tipaldi AI $script:Version - avvio installazione" 'step' 0
     if (-not $env0.PSDesktop) { throw 'Serve Windows PowerShell 5.1 (avvia Install.cmd).' }
     if ($env0.IsWin11) { Write-StarkLog 'Windows 11 rilevato: il pack e'' pensato per Windows 10, alcune parti potrebbero differire.' 'warn' }
     elseif (-not $env0.IsWin10) { throw 'Sistema operativo non supportato (serve Windows 10).' }
@@ -1292,6 +1373,8 @@ function Install-StarkHUD {
     if ($Options.Tweaks -and @($Options.Tweaks).Count) { $steps.Add(@{ T = 'Ottimizzazioni'; A = { Invoke-StarkTweaks -Ids @($Options.Tweaks) } }) }
     if ($Options.TranslucentTB) { $steps.Add(@{ T = 'Barra trasparente'; A = { Install-StarkTranslucentTB } }) }
     if ($Options.TaskbarX) { $steps.Add(@{ T = 'Icone centrate'; A = { Install-StarkTaskbarX } }) }
+    if ($Options.ShellIcons) { $steps.Add(@{ T = 'Icone di sistema'; A = { Set-StarkShellIcons -IconDir (Join-Path $script:AssetRoot 'icons') } }) }
+    if ($Options.TipaldiAI) { $steps.Add(@{ T = 'Tipaldi AI'; A = { Install-StarkTipaldiAI } }) }
     if ($Options.Rainmeter) { $steps.Add(@{ T = 'Widget HUD'; A = { Install-StarkRainmeter -Options $Options -AssetRoot $script:AssetRoot } }) }
     if ($Options.Lively) { $steps.Add(@{ T = 'Sfondo animato'; A = { Install-StarkLively -Options $Options -AssetRoot $script:AssetRoot } }) }
     if ($Options.FlowLauncher) { $steps.Add(@{ T = 'Ricerca Spotlight'; A = { Install-StarkFlowLauncher -Options $Options } }) }
@@ -1359,7 +1442,7 @@ function Restore-StarkRegistryValues {
 }
 
 function Remove-StarkFontFile {
-    <# Elimina un font installato da Stark HUD e rimette l'eventuale copia originale. Falso se resta bloccato. #>
+    <# Elimina un font installato da Tipaldi AI e rimette l'eventuale copia originale. Falso se resta bloccato. #>
     param([Parameter(Mandatory)]$Entry, [Parameter(Mandatory)][datetime]$Until)
     while (Test-Path -LiteralPath $Entry.target) {
         try { Remove-Item -LiteralPath $Entry.target -Force -ErrorAction Stop }
@@ -1389,11 +1472,11 @@ function Wait-StarkDwmSync {
 }
 
 function Restore-StarkHUD {
-    <# Riporta Windows esattamente com'era prima di Stark HUD. #>
+    <# Riporta Windows esattamente com'era prima di Tipaldi AI. #>
     [CmdletBinding()]
     param([switch]$RemoveApps)
     if (-not (Test-Path $script:StateFile)) {
-        Write-StarkLog 'Nessun backup Stark HUD trovato: niente da ripristinare.' 'warn' 100
+        Write-StarkLog 'Nessun backup Tipaldi AI trovato: niente da ripristinare.' 'warn' 100
         return
     }
     $s = Get-StarkState
@@ -1401,6 +1484,8 @@ function Restore-StarkHUD {
     Write-StarkLog 'Ripristino della configurazione originale...' 'step' 0
 
     # 1) componenti in esecuzione
+    $tipApp = Get-StarkExtra 'tipaldiApp'
+    if ($tipApp) { Stop-StarkTipaldi }
     $tbx = Get-StarkExtra 'taskbarxDir'
     if ($tbx -and (Test-Path -LiteralPath (Join-Path $tbx 'TaskbarX.exe'))) {
         try {
@@ -1446,7 +1531,7 @@ function Restore-StarkHUD {
     }
     Send-StarkFontChange
 
-    # 5) file: ripristina le copie, elimina quelli creati da Stark HUD
+    # 5) file: ripristina le copie, elimina quelli creati da Tipaldi AI
     Write-StarkLog 'Ripristino dei file...' 'info' 60
     # un font puo' restare aperto per qualche secondo (cache dei font, Esplora risorse):
     # quelli bloccati si riprovano dopo il riavvio di Esplora risorse, piu' sotto
@@ -1473,7 +1558,7 @@ function Restore-StarkHUD {
     $wpOriginal = if ($wpEntry -and $wpEntry.existed) { [Environment]::ExpandEnvironmentVariables([string]$wpEntry.value) } else { $null }
     $wp = Get-StarkExtra 'previousWallpaper'
     if (-not $wpEntry) {
-        # lo sfondo non e' mai stato cambiato da Stark HUD: non toccarlo
+        # lo sfondo non e' mai stato cambiato da Tipaldi AI: non toccarlo
     } elseif ($wpEntry.existed -and -not $wpOriginal) {
         [void][StarkHUD.Native]::SystemParametersInfo(0x0014, 0, '', 0x03)  # prima non c'era sfondo (tinta unita)
     } elseif ($wpOriginal -and (Test-Path -LiteralPath $wpOriginal)) {
@@ -1496,7 +1581,7 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
     [void][StarkHUD.Native]::SystemParametersInfo(0x0057, 0, $null, 0x03)
     Send-StarkSettingChange
 
-    # 7) app installate da Stark HUD (solo su richiesta)
+    # 7) app installate da Tipaldi AI (solo su richiesta)
     if ($RemoveApps) {
         foreach ($id in @($s.apps)) {
             Write-StarkLog "Disinstallazione $id..." 'info' 80
@@ -1505,7 +1590,19 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
             $null = Invoke-StarkWinget -Arguments @('uninstall', '--id', $id, '-e', '--silent', '--accept-source-agreements') -TimeoutSec 600
         }
     } elseif ($s.apps.Count) {
-        Write-StarkLog ("App installate da Stark HUD lasciate al loro posto: {0}. Usa 'Rimuovi anche le app' per toglierle." -f ($s.apps -join ', ')) 'info'
+        Write-StarkLog ("App installate da Tipaldi AI lasciate al loro posto: {0}. Usa 'Rimuovi anche le app' per toglierle." -f ($s.apps -join ', ')) 'info'
+    }
+
+    # Tipaldi AI: scollega da Claude, rimetti il piano energetico, togli il programma (i dati dell'utente restano)
+    if ($tipApp) {
+        if ((Get-StarkExtra 'tipaldiClaude') -and (Test-Path -LiteralPath (Get-StarkTipaldiExe))) { $null = Invoke-StarkTipaldi -Arguments '--unregister' }
+        $tipState = Join-Path $script:TipaldiHome 'state.json'
+        try {
+            $od = (Get-Content -LiteralPath $tipState -Raw -Encoding UTF8 | ConvertFrom-Json).overdriveOriginal
+            if ($od) { & powercfg.exe /setactive $od 2>$null }
+        } catch { }
+        Remove-Item -LiteralPath $tipApp -Recurse -Force -ErrorAction SilentlyContinue
+        Write-StarkLog "Tipaldi AI rimosso. I tuoi dati (attivita', report, skill) restano in $script:TipaldiHome e in $(Join-Path $env:USERPROFILE '.claude\skills'): eliminali a mano se non ti servono." 'info'
     }
 
     Restart-StarkExplorer
@@ -1559,7 +1656,7 @@ Copy-Item -LiteralPath '$nss' -Destination (Join-Path '$nssDir' 'imports\theme.n
         [void](Wait-StarkDwmSync -State $s -TimeoutSec 30)
     }
 
-    # Rainmeter era gia' presente prima di Stark HUD: riavvialo con il suo layout originale
+    # Rainmeter era gia' presente prima di Tipaldi AI: riavvialo con il suo layout originale
     $rm = Find-StarkExe @('%ProgramFiles%\Rainmeter\Rainmeter.exe', '%ProgramFiles(x86)%\Rainmeter\Rainmeter.exe')
     if ($rm -and -not $RemoveApps -and -not ($s.apps -contains 'Rainmeter.Rainmeter')) { Start-Process -FilePath $rm }
     $archive = Join-Path $script:InstallRoot ('restored-{0:yyyyMMdd-HHmmss}' -f (Get-Date))

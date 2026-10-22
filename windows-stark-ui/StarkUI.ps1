@@ -1,6 +1,6 @@
 ﻿<#
 .SYNOPSIS
-    Stark HUD - Windows 10 UI Pack (installer grafico e da riga di comando).
+    Tipaldi AI - Windows 10 UI Pack (installer grafico e da riga di comando).
 
 .DESCRIPTION
     Senza parametri apre l'installer grafico.
@@ -55,7 +55,7 @@ trap {
         exit 1
     }
     Add-Type -AssemblyName PresentationFramework
-    [void][System.Windows.MessageBox]::Show($msg, 'Stark HUD', 'OK', 'Error')
+    [void][System.Windows.MessageBox]::Show($msg, 'Tipaldi AI', 'OK', 'Error')
     break
 }
 
@@ -69,7 +69,7 @@ Import-Module (Join-Path $Root 'src\StarkHUD.psm1') -Force
 # =====================================================================================
 if ($Install -or $Restore) {
     if (-not $Yes) {
-        $what = if ($Restore) { 'ripristinare la configurazione originale' } else { "installare Stark HUD (preset $Preset)" }
+        $what = if ($Restore) { 'ripristinare la configurazione originale' } else { "installare Tipaldi AI (preset $Preset)" }
         $answer = Read-Host "Stai per $what. Esplora risorse verra' riavviato. Procedere? (S/N)"
         if ($answer -notmatch '^[sSyY]') { Write-Host 'Annullato.'; return }
     }
@@ -158,9 +158,13 @@ function Add-Toggle($Panel, [string]$Key, [string]$Title, [string]$Desc, [bool]$
 # --- Contenuti delle schede ----------------------------------------------------------
 $defaults = Get-StarkPreset 'Default'
 
+Add-Group $ui.PanelTheme 'Tipaldi AI // il cuore del sistema'
+Add-Toggle $ui.PanelTheme 'TipaldiAI' 'Desktop Tipaldi AI con intelligenza artificiale' 'Desktop futuristico animato: reattore con telemetria, contesto di lavoro, avvio rapido, desktop ordinato per contesto, console AI. Diagnosi di dischi e integrità, riparazioni sicure automatiche, report settimanale, skill e collegamento MCP con Claude.' $defaults.TipaldiAI 'nuovo'
+Add-Toggle $ui.PanelTheme 'ShellIcons' 'Icone Tipaldi AI' 'Icone esagonali luminose per Questo PC, Cestino, Rete, cartella utente e per le cartelle di contesto create dal riordino.' $defaults.ShellIcons
+
 Add-Group $ui.PanelTheme 'Livello 1 // Nativo Windows (nessuna app aggiuntiva)'
 Add-Toggle $ui.PanelTheme 'Theme' 'Tema scuro, colori e sfondo 4K' 'Modalita'' scura, accento ciano reattore con tavolozza oro, trasparenze, sfondo "Arc Reactor" 4K (ultrawide incluso).' $defaults.Theme 'consigliato'
-Add-Toggle $ui.PanelTheme 'Cursors' 'Cursori Stark HUD' '17 puntatori vettoriali multi-risoluzione (fino a 4K), attesa e caricamento animati.' $defaults.Cursors
+Add-Toggle $ui.PanelTheme 'Cursors' 'Cursori Tipaldi AI' '17 puntatori vettoriali multi-risoluzione (fino a 4K), attesa e caricamento animati.' $defaults.Cursors
 Add-Toggle $ui.PanelTheme 'Sounds' 'Schema suoni' 'Notifiche "vetro" in stile Apple, errori morbidi, connessione dispositivi, cestino "dissolvenza".' $defaults.Sounds
 Add-Toggle $ui.PanelTheme 'StartupSound' 'Suono "power-up" all''accesso' 'Il reattore si accende quando entri in Windows.' $defaults.StartupSound
 Add-Toggle $ui.PanelTheme 'LockScreen' 'Schermata di blocco e di accesso' 'Reattore centrato sulla schermata di blocco (l''immagine attuale viene salvata).' $defaults.LockScreen
@@ -185,10 +189,10 @@ $cityCard.Child = $cityStack
 Add-Toggle $ui.PanelTheme 'Clock24' 'Orologio 24 ore' 'Disattiva per il formato 12 ore (AM/PM).' $defaults.Clock24
 
 Add-Group $ui.PanelComponents 'Livello 2 // Overlay open source (nessuna iniezione nei processi di sistema)'
-Add-Toggle $ui.PanelComponents 'Lively' 'Sfondo animato Arc Reactor' 'Lively Wallpaper: anelli in rotazione sulla GPU, telemetria CPU/RAM/GPU/rete, scheda Now Playing. Si mette in pausa con giochi e video a schermo intero.' $defaults.Lively 'consigliato'
+Add-Toggle $ui.PanelComponents 'Lively' 'Sfondo animato Arc Reactor' 'Lively Wallpaper: anelli in rotazione sulla GPU, telemetria CPU/RAM/GPU/rete, scheda Now Playing. Si mette in pausa con giochi e video a schermo intero.' $defaults.Lively
 Add-Toggle $ui.PanelComponents 'LivelyAudio' 'Reattore che pulsa con la musica' 'Il nucleo reagisce all''audio di sistema. Leggero, ma tiene attiva la cattura audio: lascialo spento se vuoi il massimo risparmio.' $defaults.LivelyAudio
-Add-Toggle $ui.PanelComponents 'Rainmeter' 'Widget HUD sul desktop' 'Rainmeter: orologio stile Apple TV, meteo, anelli telemetria stile Apple Watch, control center stile HyperOS. Scalati per schermi HiDPI/4K.' $defaults.Rainmeter 'consigliato'
-Add-Toggle $ui.PanelComponents 'FlowLauncher' 'Ricerca stile Spotlight (Alt+Spazio)' 'Flow Launcher con tema Stark HUD: app, file, calcoli e web da un''unica barra.' $defaults.FlowLauncher
+Add-Toggle $ui.PanelComponents 'Rainmeter' 'Widget Rainmeter classici' 'Alternativa al desktop Tipaldi AI: orologio, meteo, anelli telemetria e control center con Rainmeter. Non serve se usi il desktop Tipaldi AI.' $defaults.Rainmeter
+Add-Toggle $ui.PanelComponents 'FlowLauncher' 'Ricerca stile Spotlight (Alt+Spazio)' 'Flow Launcher con tema Tipaldi AI: app, file, calcoli e web da un''unica barra.' $defaults.FlowLauncher
 Add-Toggle $ui.PanelComponents 'TranslucentTB' 'Barra delle applicazioni trasparente' 'TranslucentTB: trasparente sul desktop, acrilico grafite con finestre aperte, opaca in risparmio batteria.' $defaults.TranslucentTB
 Add-Toggle $ui.PanelComponents 'TaskbarX' 'Icone centrate stile dock' 'TaskbarX 1.7.8 (archiviato, ma senza iniezioni): download verificato con SHA256, avvio automatico per il tuo utente.' $defaults.TaskbarX
 
@@ -211,7 +215,7 @@ foreach ($group in ($tweaks | ForEach-Object { $_.group } | Select-Object -Uniqu
     }
 }
 Add-Group $ui.PanelTweaks 'Sicurezza'
-Add-Toggle $ui.PanelTweaks 'RestorePoint' 'Punto di ripristino di Windows' 'Oltre al backup Stark HUD, crea un punto di ripristino di sistema (richiede UAC).' $defaults.RestorePoint 'consigliato'
+Add-Toggle $ui.PanelTweaks 'RestorePoint' 'Punto di ripristino di Windows' 'Oltre al backup Tipaldi AI, crea un punto di ripristino di sistema (richiede UAC).' $defaults.RestorePoint 'consigliato'
 Add-Toggle $ui.PanelTweaks 'RestartExplorer' 'Riavvia Esplora risorse alla fine' 'Applica subito barra e colori. Le finestre di Esplora file aperte verranno chiuse.' $defaults.RestartExplorer
 
 # --- Stato del sistema ----------------------------------------------------------------
@@ -226,7 +230,7 @@ $lines = @(
     ('[ OK ] Backup automatico di ogni modifica')
 )
 $state = Join-Path $env:LOCALAPPDATA 'StarkHUD\state\backup.json'
-if (Test-Path $state) { $lines += '[ ** ] Stark HUD gia'' installato' }
+if (Test-Path $state) { $lines += '[ ** ] Tipaldi AI gia'' installato' }
 $ui.InfoText.Text = $lines -join "`n"
 if (-not $envInfo.HasWinget) {
     foreach ($k in 'Lively', 'LivelyAudio', 'Rainmeter', 'FlowLauncher', 'TranslucentTB', 'Nilesoft', 'Windhawk') {
@@ -333,7 +337,7 @@ $timer.Start()
 
 function Get-SelectedOptions {
     $o = Get-StarkPreset 'Default'
-    foreach ($k in 'Theme', 'Cursors', 'Sounds', 'StartupSound', 'LockScreen', 'Fonts', 'Clock24', 'Lively', 'LivelyAudio',
+    foreach ($k in 'TipaldiAI', 'ShellIcons', 'Theme', 'Cursors', 'Sounds', 'StartupSound', 'LockScreen', 'Fonts', 'Clock24', 'Lively', 'LivelyAudio',
         'Rainmeter', 'FlowLauncher', 'TranslucentTB', 'TaskbarX', 'Nilesoft', 'Windhawk', 'RestorePoint', 'RestartExplorer') {
         $o[$k] = [bool]$script:Toggles[$k].IsChecked
     }
@@ -345,19 +349,19 @@ function Get-SelectedOptions {
 
 $ui.BtnInstall.Add_Click({
         $o = Get-SelectedOptions
-        $msg = "Installare Stark HUD con le opzioni scelte?`n`n" +
+        $msg = "Installare Tipaldi AI con le opzioni scelte?`n`n" +
         "- Ogni modifica viene salvata e si annulla con 'Ripristina originale'.`n" +
         "- Per le app aggiuntive possono comparire richieste UAC di winget.`n" +
         $(if ($o.RestartExplorer) { "- Alla fine Esplora risorse si riavvia (le sue finestre aperte si chiudono).`n" } else { '' })
-        $r = [System.Windows.MessageBox]::Show($window, $msg, 'Stark HUD', 'YesNo', 'Question')
+        $r = [System.Windows.MessageBox]::Show($window, $msg, 'Tipaldi AI', 'YesNo', 'Question')
         if ($r -eq 'Yes') { Start-StarkJob 'install' $o $false }
     })
 
 $ui.BtnRestore.Add_Click({
         $remove = [bool]$ui.ChkRemoveApps.IsChecked
-        $msg = "Ripristinare Windows esattamente com'era prima di Stark HUD?" +
-        $(if ($remove) { "`n`nVerranno disinstallate anche le app aggiunte da Stark HUD." } else { '' })
-        $r = [System.Windows.MessageBox]::Show($window, $msg, 'Stark HUD', 'YesNo', 'Warning')
+        $msg = "Ripristinare Windows esattamente com'era prima di Tipaldi AI?" +
+        $(if ($remove) { "`n`nVerranno disinstallate anche le app aggiunte da Tipaldi AI." } else { '' })
+        $r = [System.Windows.MessageBox]::Show($window, $msg, 'Tipaldi AI', 'YesNo', 'Warning')
         if ($r -eq 'Yes') { Start-StarkJob 'restore' @{} $remove }
     })
 
@@ -365,12 +369,12 @@ $ui.BtnClose.Add_Click({ $window.Close() })
 $window.Add_Closing({
         param($s, $e)
         if ($script:Job) {
-            [void][System.Windows.MessageBox]::Show($window, "Attendi la fine dell'operazione in corso: interromperla a meta' lascerebbe il sistema in uno stato intermedio (comunque ripristinabile).", 'Stark HUD', 'OK', 'Information')
+            [void][System.Windows.MessageBox]::Show($window, "Attendi la fine dell'operazione in corso: interromperla a meta' lascerebbe il sistema in uno stato intermedio (comunque ripristinabile).", 'Tipaldi AI', 'OK', 'Information')
             $e.Cancel = $true
         } else { $timer.Stop() }
     })
 
-Add-LogLine "Stark HUD pronto. Cartella del pack: $Root" 'info'
+Add-LogLine "Tipaldi AI pronto. Cartella del pack: $Root" 'info'
 
 if ($SmokeTest) {
     # Verifica la mappatura opzioni -> interruttori, poi fotografa ogni scheda e chiude
