@@ -1430,8 +1430,12 @@ Copy-Item -LiteralPath '$src' -Destination `$target -Force
 
 function Invoke-StarkTweaks {
     param([string[]]$Ids)
-    $all = Get-StarkTweaks
-    foreach ($t in $all) {
+    $all = @(Get-StarkTweaks)
+    # "icone del desktop" per prima: Esplora risorse, quando le mostra/nasconde, riscrive nel registro le sue
+    # impostazioni di Visualizza (es. HideFileExt) e cancellerebbe le ottimizzazioni appena scritte
+    $ordered = @($all | Where-Object { $_.PSObject.Properties['type'] -and $_.type -eq 'desktop-icons' }) +
+        @($all | Where-Object { -not ($_.PSObject.Properties['type'] -and $_.type -eq 'desktop-icons') })
+    foreach ($t in $ordered) {
         if ($Ids -notcontains $t.id) { continue }
         $type = if ($t.PSObject.Properties['type']) { $t.type } else { 'registry' }
         try {
