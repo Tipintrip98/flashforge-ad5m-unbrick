@@ -75,7 +75,7 @@ if (-not (Test-Path -LiteralPath $csc)) { throw "Compilatore C# non trovato: $cs
 New-Item -ItemType Directory -Path $outDir -Force | Out-Null
 $tmpExe = Join-Path $work 'TipaldiAI-Setup.exe'
 & $csc /nologo /target:winexe /optimize+ "/out:$tmpExe" "/win32icon:$(Join-Path $setupDir 'TipaldiAI.ico')" "/resource:$zip,StarkHUD.pack.zip" `
-    /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Windows.Forms.dll (Join-Path $setupDir 'StarkSetup.cs') | Out-Host
+    /r:System.IO.Compression.dll /r:System.IO.Compression.FileSystem.dll /r:System.Windows.Forms.dll "/r:$([PSObject].Assembly.Location)" (Join-Path $setupDir 'StarkSetup.cs') | Out-Host
 if ($LASTEXITCODE -ne 0) { throw "Compilazione fallita (codice $LASTEXITCODE)" }
 Copy-Item -LiteralPath $tmpExe -Destination $exe -Force
 Set-Content -LiteralPath $hashFile -Value $fingerprint -Encoding Ascii

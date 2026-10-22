@@ -50,8 +50,21 @@ Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
 
 # 2) installer avviato dall'exe
 $shot = Join-Path $OutDir 'setup-exe.png'
-$code = Invoke-Exe @('--test', "`"$shot`"")
+$p = Start-Process -FilePath $Exe -ArgumentList @('--test', "`"$shot`"") -PassThru
+$null = $p.Handle
+$ownWindow = $false; $psWindow = $false
+while (-not $p.HasExited) {
+    # la finestra dell'installer deve appartenere a TipaldiAI-Setup.exe, non a powershell.exe
+    $me = Get-Process -Id $p.Id -ErrorAction SilentlyContinue
+    if ($me -and $me.MainWindowTitle) { $ownWindow = $true }
+    if (Get-Process powershell -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $PID -and $_.MainWindowTitle -like '*Tipaldi*' }) { $psWindow = $true }
+    Start-Sleep -Milliseconds 300
+}
+$p.WaitForExit()
+$code = $p.ExitCode
 Check ($code -eq 0) 'Installer avviato dall''exe e chiuso senza errori' "(codice $code)"
+Check $ownWindow 'Finestra dell''installer di TipaldiAI-Setup.exe (icona e nome propri nella barra)'
+Check (-not $psWindow) 'Nessuna finestra di PowerShell'
 Check (@(Get-ChildItem -LiteralPath $OutDir -Filter 'setup-exe-*.png').Count -ge 3) 'Screenshot delle schede'
 Check (Test-Path -LiteralPath (Join-Path $env:LOCALAPPDATA 'TipaldiAI\pack\StarkUI.ps1')) 'Pack estratto in %LOCALAPPDATA%\TipaldiAI\pack'
 

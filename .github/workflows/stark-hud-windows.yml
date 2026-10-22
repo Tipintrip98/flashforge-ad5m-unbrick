@@ -89,6 +89,30 @@ jobs:
           path: windows-stark-ui/tests/out/
           if-no-files-found: ignore
 
+  # Desktop Tipaldi AI dentro la shell vera di Windows: gerarchia delle finestre di Esplora risorse,
+  # livello sfondo dietro alle icone, clic inoltrati, riaggancio dopo il riavvio di Esplora risorse.
+  # windows-2022 ha la shell di Windows 10 (build 20348), windows-2025 quella di Windows 11.
+  shell:
+    name: shell di Windows (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: powershell
+        working-directory: windows-stark-ui
+    steps:
+      - uses: actions/checkout@v4
+      - name: "Tipaldi AI: compilazione"
+        run: .\agent\build.ps1
+      - name: Integrazione con il desktop di Esplora risorse
+        run: |
+          & .\tests\Test-StarkShell.ps1
+          exit $LASTEXITCODE
+
   # Sul runner windows-2022 winget non c'e', come sul PC dell'utente: l'installer deve installarlo da solo
   winget:
     name: winget assente (installazione automatica)

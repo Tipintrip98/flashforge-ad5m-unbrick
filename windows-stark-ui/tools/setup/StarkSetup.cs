@@ -1,6 +1,8 @@
 // Tipaldi AI - TipaldiAI-Setup.exe
 // Un solo file da scaricare: contiene il pack completo (pack.zip incorporato), lo estrae in
-// %LOCALAPPDATA%\TipaldiAI\pack e apre l'installer grafico (StarkUI.ps1, Windows PowerShell 5.1).
+// %LOCALAPPDATA%\TipaldiAI\pack e apre l'installer grafico (StarkUI.ps1).
+// Lo script gira dentro questo exe (motore di Windows PowerShell 5.1 ospitato, nessun powershell.exe):
+// per Windows l'installer e' "Tipaldi AI" con la sua icona, non una finestra di PowerShell.
 // Non richiede privilegi di amministratore e non installa nulla da solo: decide l'utente nell'installer.
 //
 //   TipaldiAI-Setup.exe                 apre l'installer
@@ -10,10 +12,14 @@
 //
 // Compilato da tools\Build-Setup.ps1 con il compilatore C# incluso in Windows (.NET Framework 4).
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Compression;
+using System.Management.Automation;
+using System.Management.Automation.Runspaces;
 using System.Reflection;
+using System.Threading;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Tipaldi AI - installer")]
@@ -64,13 +70,14 @@ static class StarkSetup
                 return 0;
             }
 
-            string script = "-File \"" + Path.Combine(dir, "StarkUI.ps1") + "\"";
+            string script = Path.Combine(dir, "StarkUI.ps1");
+            Dictionary<string, object> p = new Dictionary<string, object>();
             if (mode == "--test" && arg != null)
             {
-                return Start(PowerShell(), "-NoProfile -ExecutionPolicy Bypass -STA " + script + " -SmokeTest -Screenshot \"" + Path.GetFullPath(arg) + "\"", dir, true, false);
+                p["SmokeTest"] = true;
+                p["Screenshot"] = Path.GetFullPath(arg);
             }
-            Start(PowerShell(), "-NoProfile -ExecutionPolicy Bypass -STA -WindowStyle Hidden " + script, dir, false, false);
-            return 0;
+            return RunHosted(script, dir, p);
         }
         catch (Exception ex)
         {
@@ -84,10 +91,36 @@ static class StarkSetup
         }
     }
 
-    static string PowerShell()
+    /// <summary>Esegue lo script nel motore PowerShell ospitato, sul thread STA principale (WPF).</summary>
+    static int RunHosted(string script, string dir, Dictionary<string, object> parameters)
     {
-        // processo a 64 bit su Windows a 64 bit: System32 e' quello giusto (StarkUI.ps1 controlla comunque)
-        return Path.Combine(Environment.SystemDirectory, @"WindowsPowerShell\v1.0\powershell.exe");
+        // equivalente di -ExecutionPolicy Bypass, solo per questo processo
+        Environment.SetEnvironmentVariable("PSExecutionPolicyPreference", "Bypass");
+        Directory.SetCurrentDirectory(dir);
+        using (Runspace rs = RunspaceFactory.CreateRunspace(InitialSessionState.CreateDefault()))
+        {
+            rs.ApartmentState = ApartmentState.STA;
+            rs.ThreadOptions = PSThreadOptions.UseCurrentThread;
+            rs.Open();
+            rs.SessionStateProxy.Path.SetLocation(dir);
+            using (PowerShell ps = PowerShell.Create())
+            {
+                ps.Runspace = rs;
+                ps.AddCommand(script);
+                foreach (KeyValuePair<string, object> kv in parameters) { ps.AddParameter(kv.Key, kv.Value); }
+                ps.Streams.Information.DataAdded += (s, e) => Console.WriteLine(ps.Streams.Information[e.Index]);
+                ps.Streams.Error.DataAdded += (s, e) => Console.Error.WriteLine(ps.Streams.Error[e.Index]);
+                try { ps.Invoke(); }
+                catch (RuntimeException ex)
+                {
+                    // errore fermante: lo script l'ha gia' mostrato (trap) prima di chiudersi
+                    Console.Error.WriteLine(ex);
+                    return 1;
+                }
+                object code = rs.SessionStateProxy.GetVariable("LASTEXITCODE");
+                return code is int ? (int)code : 0;
+            }
+        }
     }
 
     static int Start(string exe, string arguments, string dir, bool wait, bool visible)

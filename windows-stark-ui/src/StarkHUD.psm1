@@ -1009,13 +1009,17 @@ function Set-StarkSounds {
 }
 
 function Set-StarkStartupSound {
+    <#
+        Suono "power-up" all'accesso. Lo suona TipaldiAI.exe --play: un'app grafica senza finestre,
+        quindi all'accesso non compare nessuna finestra di PowerShell nella barra delle applicazioni.
+    #>
     param([string]$SoundDir)
+    $exe = Copy-StarkTipaldiApp
     $startup = [Environment]::GetFolderPath('Startup')
     $lnk = Join-Path $startup 'Tipaldi AI - suono di avvio.lnk'
     Backup-StarkFile -Target $lnk
-    $wav = (Join-Path $SoundDir 'startup.wav').Replace("'", "''")
-    $cmd = "-NoProfile -NonInteractive -WindowStyle Hidden -Command `"(New-Object Media.SoundPlayer '$wav').PlaySync()`""
-    New-StarkShortcut -Path $lnk -Target "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe" -Arguments $cmd -WindowStyle 7 -Description 'Tipaldi AI power-up'
+    $wav = Join-Path $SoundDir 'startup.wav'
+    New-StarkShortcut -Path $lnk -Target $exe -Arguments "--play `"$wav`"" -WorkingDir (Split-Path -Parent $exe) -Description 'Tipaldi AI power-up'
     Write-StarkLog 'Suono "power-up" del reattore all''accesso attivato.' 'ok'
 }
 
@@ -1040,23 +1044,32 @@ function Invoke-StarkTipaldi {
     $p.ExitCode
 }
 
-function Install-StarkTipaldiAI {
-    <#
-        Tipaldi AI: desktop futuristico, diagnosi di dischi e integrita', riparazioni sicure automatiche,
-        attivita' e contesti di lavoro, report settimanale, skill per Claude, server MCP per Claude.
-        Solo cartelle dell'utente: %LOCALAPPDATA%\TipaldiAI e la cartella Esecuzione automatica.
-    #>
+function Copy-StarkTipaldiApp {
+    <# Copia TipaldiAI.exe (compilandolo se serve) in %LOCALAPPDATA%\TipaldiAI\app. Restituisce il percorso dell'exe. #>
     $bin = Join-Path $script:PackRoot 'agent\bin'
     if (-not (Test-Path -LiteralPath (Join-Path $bin 'TipaldiAI.exe'))) {
         Write-StarkLog 'Compilo Tipaldi AI con il compilatore C# di Windows...' 'info'
         $null = & (Join-Path $script:PackRoot 'agent\build.ps1') -Out $bin
     }
+    $wasRunning = [bool](Get-Process TipaldiAI -ErrorAction SilentlyContinue)
     Stop-StarkTipaldi
     $app = Join-Path $script:TipaldiHome 'app'
     Set-StarkExtra 'tipaldiApp' $app -IfMissing
     New-Item -ItemType Directory -Path $app -Force | Out-Null
     Copy-Item -Path (Join-Path $bin '*') -Destination $app -Recurse -Force
     $exe = Get-StarkTipaldiExe
+    if ($wasRunning) { Start-Process -FilePath $exe -WorkingDirectory $app }   # era attivo: torna attivo
+    $exe
+}
+
+function Install-StarkTipaldiAI {
+    <#
+        Tipaldi AI: desktop futuristico, diagnosi di dischi e integrita', riparazioni sicure automatiche,
+        attivita' e contesti di lavoro, report settimanale, skill per Claude, server MCP per Claude.
+        Solo cartelle dell'utente: %LOCALAPPDATA%\TipaldiAI e la cartella Esecuzione automatica.
+    #>
+    $exe = Copy-StarkTipaldiApp
+    $app = Split-Path -Parent $exe
 
     $lnk = Join-Path ([Environment]::GetFolderPath('Startup')) 'Tipaldi AI.lnk'
     Backup-StarkFile -Target $lnk

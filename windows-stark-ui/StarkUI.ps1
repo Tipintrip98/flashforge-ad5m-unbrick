@@ -90,6 +90,19 @@ Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase, Sys
 [xml]$xaml = Get-Content -Path (Join-Path $Root 'src\MainWindow.xaml') -Raw -Encoding UTF8
 $window = [Windows.Markup.XamlReader]::Load((New-Object System.Xml.XmlNodeReader $xaml))
 
+# Identita' propria nella barra delle applicazioni. Da TipaldiAI-Setup.exe lo script gira dentro l'exe
+# (icona e nome Tipaldi AI); da Installa.cmd gira in powershell.exe: senza questo Windows lo raggrupperebbe
+# con PowerShell e ne userebbe l'icona.
+Add-Type -Namespace TipaldiSetup -Name Shell -MemberDefinition '[DllImport("shell32.dll", CharSet = CharSet.Unicode)] public static extern int SetCurrentProcessExplicitAppUserModelID(string id);'
+[void][TipaldiSetup.Shell]::SetCurrentProcessExplicitAppUserModelID('TipaldiAI.Installer')
+$hostExe = [Diagnostics.Process]::GetCurrentProcess().MainModule.FileName
+$appIcon = Join-Path $Root 'agent\bin\TipaldiAI.exe'
+if ($hostExe -match '\\powershell\.exe$' -and (Test-Path -LiteralPath $appIcon)) {
+    Add-Type -AssemblyName System.Drawing
+    $ico = [Drawing.Icon]::ExtractAssociatedIcon($appIcon)
+    $window.Icon = [Windows.Interop.Imaging]::CreateBitmapSourceFromHIcon($ico.Handle, [Windows.Int32Rect]::Empty, [Windows.Media.Imaging.BitmapSizeOptions]::FromEmptyOptions())
+}
+
 $ui = @{}
 foreach ($name in 'TitleBar', 'BtnMin', 'BtnClose', 'InfoText', 'TabTheme', 'TabComponents', 'TabTweaks', 'TabLog',
     'Scroller', 'PanelTheme', 'PanelComponents', 'PanelTweaks', 'PanelLog', 'StatusText', 'ProgressScale',

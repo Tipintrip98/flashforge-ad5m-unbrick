@@ -8,6 +8,7 @@
 //   TipaldiAI.exe --health            diagnosi completa in JSON
 //   TipaldiAI.exe --selftest DIR      autotest (CI)
 //   TipaldiAI.exe --hud-screenshot F  salva un'immagine del desktop (CI)
+//   TipaldiAI.exe --play FILE.wav     suona un file (suono di avvio all'accesso, senza finestre)
 using System;
 using System.Diagnostics;
 using System.IO;
@@ -73,6 +74,9 @@ namespace TipaldiAI
                         Console.WriteLine(Json.Indent(Json.Write(h.ToDict())));
                         return 0;
                     }
+                    case "--play":
+                        if (arg != null && File.Exists(arg)) { using (System.Media.SoundPlayer sp = new System.Media.SoundPlayer(arg)) { sp.PlaySync(); } }
+                        return 0;
                     case "--hud-screenshot":
 #if NOWPF
                         Console.Error.WriteLine("Desktop non disponibile in questa build.");

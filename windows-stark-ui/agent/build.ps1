@@ -16,7 +16,8 @@ New-Item -ItemType Directory -Path $Out -Force | Out-Null
 $exe = Join-Path $Out 'TipaldiAI.exe'
 $sources = @(Get-ChildItem -LiteralPath $src -Filter *.cs | ForEach-Object { $_.FullName })
 $refs = 'System.dll', 'System.Core.dll', 'System.Drawing.dll', 'System.Management.dll', 'System.Web.Extensions.dll', 'System.Windows.Forms.dll',
-    'System.IO.Compression.dll', 'System.IO.Compression.FileSystem.dll', 'System.Xaml.dll', 'WindowsBase.dll', 'PresentationCore.dll', 'PresentationFramework.dll'
+    'System.IO.Compression.dll', 'System.IO.Compression.FileSystem.dll', 'System.Xaml.dll', 'WindowsBase.dll', 'PresentationCore.dll', 'PresentationFramework.dll',
+    'UIAutomationClient.dll', 'UIAutomationTypes.dll', 'UIAutomationProvider.dll'
 $cscArgs = @('/nologo', '/target:winexe', '/optimize+', '/codepage:65001', "/out:$exe", "/lib:$(Join-Path $fw 'WPF')",
     "/win32icon:$(Join-Path $pack 'tools\setup\TipaldiAI.ico')", "/resource:$(Join-Path $src 'Hud.xaml'),TipaldiAI.Hud.xaml") +
     @($refs | ForEach-Object { "/r:$_" }) + $sources

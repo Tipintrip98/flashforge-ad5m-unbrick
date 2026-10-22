@@ -235,6 +235,12 @@ $wall = Get-RegValue 'Control Panel\Desktop' 'Wallpaper'
 Check ($wall -like '*StarkHUD-Desktop-*.jpg') 'Sfondo del desktop applicato' $wall
 $startup = [Environment]::GetFolderPath('Startup')
 Check (Test-Path (Join-Path $startup 'Tipaldi AI - suono di avvio.lnk')) 'Collegamento suono di avvio'
+# all'accesso non deve comparire nessuna finestra di PowerShell: niente in Esecuzione automatica punta a powershell.exe
+$wsh = New-Object -ComObject WScript.Shell
+$psLinks = @(Get-ChildItem -LiteralPath $startup -Filter '*.lnk' -ErrorAction SilentlyContinue | Where-Object { $wsh.CreateShortcut($_.FullName).TargetPath -match 'powershell' })
+Check ($psLinks.Count -eq 0) 'Nessun avvio automatico tramite PowerShell' (($psLinks | ForEach-Object Name) -join ', ')
+$soundLnk = Join-Path $startup 'Tipaldi AI - suono di avvio.lnk'
+if (Test-Path $soundLnk) { Check ($wsh.CreateShortcut($soundLnk).TargetPath -like '*\TipaldiAI.exe') 'Suono di avvio suonato da TipaldiAI.exe (app senza finestre)' $wsh.CreateShortcut($soundLnk).TargetPath }
 
 Section '3a2. Verifica Tipaldi AI'
 $tipExe = Join-Path $tipHome 'app\TipaldiAI.exe'

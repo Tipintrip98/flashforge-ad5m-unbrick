@@ -34,21 +34,44 @@ namespace TipaldiAI
             Thread waiter = new Thread(() => { stop.WaitOne(); app.Dispatcher.BeginInvoke(new Action(app.Shutdown)); }) { IsBackground = true };
             waiter.Start();
             app.ShutdownMode = ShutdownMode.OnExplicitShutdown;
-            HudWindow hud = new HudWindow(agent, false);
-            if (agent.Settings.Hud) { hud.Show(); }
+            bool wanted = agent.Settings.Hud;
+            HudWindow hud = null;
+            Action ensure = () =>
+            {
+                if (!wanted) { return; }
+                if (hud == null)
+                {
+                    // prima apertura, o Esplora risorse riavviato: il livello sfondo sparisce e con lui la finestra figlia
+                    HudWindow w = new HudWindow(agent, false);
+                    w.Closed += (s, e) => { if (hud == w) { hud = null; } };
+                    hud = w;
+                    w.Show();
+                }
+                else { hud.Watch(); }
+            };
+            ensure();
+            DispatcherTimer watch = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
+            watch.Tick += (s, e) => ensure();
+            watch.Start();
+            TaskbarWatcher.Start(() => { if (hud != null) { hud.Reattach(); } else { ensure(); } });
 
             Forms.NotifyIcon tray = new Forms.NotifyIcon();
             try { tray.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Paths.ExePath); } catch (Exception) { tray.Icon = System.Drawing.SystemIcons.Application; }
             tray.Text = "Tipaldi AI";
             Forms.ContextMenuStrip menu = new Forms.ContextMenuStrip();
-            menu.Items.Add("Mostra / nascondi il desktop Tipaldi AI", null, (s, e) => { if (hud.IsVisible) { hud.Hide(); } else { hud.Show(); hud.SendToBottom(); } });
-            menu.Items.Add("Scansione completa", null, (s, e) => hud.FullScan());
-            menu.Items.Add("Report settimanale", null, (s, e) => hud.OpenReport());
+            Action toggle = () =>
+            {
+                if (hud != null && hud.IsVisible) { wanted = false; hud.Hide(); }
+                else { wanted = true; if (hud != null) { hud.Show(); hud.Reattach(); } else { ensure(); } }
+            };
+            menu.Items.Add("Mostra / nascondi il desktop Tipaldi AI", null, (s, e) => toggle());
+            menu.Items.Add("Scansione completa", null, (s, e) => { if (hud != null) { hud.FullScan(); } else { agent.RunHealth(true); } });
+            menu.Items.Add("Report settimanale", null, (s, e) => { if (hud != null) { hud.OpenReport(); } });
             menu.Items.Add("Cartella dati", null, (s, e) => Process.Start(new ProcessStartInfo(Paths.Root) { UseShellExecute = true }));
             menu.Items.Add(new Forms.ToolStripSeparator());
             menu.Items.Add("Esci", null, (s, e) => { tray.Visible = false; app.Shutdown(); });
             tray.ContextMenuStrip = menu;
-            tray.DoubleClick += (s, e) => { hud.Show(); hud.SendToBottom(); };
+            tray.DoubleClick += (s, e) => { wanted = true; if (hud != null) { hud.Show(); hud.Reattach(); } else { ensure(); } };
             tray.Visible = true;
             app.Run();
             tray.Dispose();
@@ -82,6 +105,34 @@ namespace TipaldiAI
             t.Start();
             app.Run();
             return code;
+        }
+    }
+
+    /// <summary>
+    /// Avviso "TaskbarCreated" che Esplora risorse manda a tutte le finestre principali quando riparte
+    /// (dopo un crash o un riavvio dall'installer): è il momento di riagganciarsi al nuovo desktop.
+    /// </summary>
+    static class TaskbarWatcher
+    {
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern uint RegisterWindowMessage(string name);
+        static HwndSource source;
+
+        public static void Start(Action onRestart)
+        {
+            uint msg = RegisterWindowMessage("TaskbarCreated");
+            // finestra principale invisibile: i messaggi broadcast non arrivano alle finestre solo-messaggi
+            HwndSourceParameters p = new HwndSourceParameters("TipaldiAI-ShellWatcher") { WindowStyle = unchecked((int)0x80000000), Width = 0, Height = 0 };
+            source = new HwndSource(p);
+            source.AddHook((IntPtr h, int m, IntPtr w, IntPtr l, ref bool handled) =>
+            {
+                if ((uint)m == msg)
+                {
+                    DispatcherTimer t = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+                    t.Tick += (s, e) => { t.Stop(); onRestart(); };
+                    t.Start();
+                }
+                return IntPtr.Zero;
+            });
         }
     }
 
@@ -210,23 +261,107 @@ namespace TipaldiAI
 
         // ------------------------------------------------------------------ finestra sul desktop
 
+        IntPtr layer;
+        DesktopShell.RECT placed;
+        DesktopInput input;
+        int retry;
+
+        /// <summary>"sfondo" = dentro il livello sfondo di Windows, dietro alle icone; "finestra" = ripiego.</summary>
+        public string Mode { get; private set; }
+        public bool Embedded { get { return layer != IntPtr.Zero; } }
+
         void AttachToDesktop()
         {
             if (demo) { return; }
+            Reattach();
+        }
+
+        /// <summary>Aggancia (o riaggancia) il desktop al livello sfondo di Esplora risorse.</summary>
+        public void Reattach()
+        {
+            if (demo) { return; }
             IntPtr h = new WindowInteropHelper(this).Handle;
-            // proprietaria = finestra del desktop: resta visibile con Win+D e non compare in Alt+Tab
-            IntPtr progman = FindWindow("Progman", null);
-            if (progman != IntPtr.Zero) { SetWindowLongPtr64(h, -8, progman); }
-            long ex = GetWindowLongPtr64(h, -20).ToInt64();
-            SetWindowLongPtr64(h, -20, new IntPtr((ex | 0x80) & ~0x40000L));   // WS_EX_TOOLWINDOW, senza WS_EX_APPWINDOW
-            SendToBottom();
+            if (h == IntPtr.Zero) { return; }
+            IntPtr l = DesktopShell.FindWallpaperLayer();
+            DesktopShell.RECT wa = DesktopShell.WorkArea();
+            string before = Mode;
+            if (l != IntPtr.Zero && DesktopShell.Embed(h, l, wa))
+            {
+                layer = l;
+                placed = wa;
+                Mode = "sfondo";
+                if (input == null) { input = new DesktopInput(HwndSource.FromHwnd(h)); }
+                if (before != Mode) { Events.Add("info", "Desktop integrato in Windows: livello sfondo, dietro alle icone del desktop."); }
+            }
+            else
+            {
+                layer = IntPtr.Zero;
+                Mode = "finestra";
+                DesktopShell.AttachBelow(h);
+                if (before != Mode) { Events.Add("warn", "Livello sfondo di Windows non disponibile: desktop come finestra sotto tutte le altre."); }
+            }
+            Dispatcher.BeginInvoke(new Action(WriteShellState), DispatcherPriority.ApplicationIdle);
+        }
+
+        /// <summary>Ogni pochi secondi: riaggancia dopo un riavvio di Esplora risorse, un cambio di sfondo o di risoluzione.</summary>
+        public void Watch()
+        {
+            if (demo || !IsVisible) { return; }
+            IntPtr h = new WindowInteropHelper(this).Handle;
+            if (layer != IntPtr.Zero)
+            {
+                DesktopShell.RECT wa = DesktopShell.WorkArea();
+                bool moved = wa.Left != placed.Left || wa.Top != placed.Top || wa.Right != placed.Right || wa.Bottom != placed.Bottom;
+                if (!DesktopShell.IsShown(layer) || DesktopShell.ParentOf(h) != layer || moved) { Reattach(); }
+            }
+            else if (++retry % 10 == 0) { Reattach(); }
+        }
+
+        /// <summary>Stato dell'integrazione in desktop.json (diagnosi e test): modalità, finestre, posizione dei pulsanti.</summary>
+        void WriteShellState()
+        {
+            try
+            {
+                IntPtr h = new WindowInteropHelper(this).Handle;
+                IntPtr parent = DesktopShell.ParentOf(h);
+                Dictionary<string, object> d = new Dictionary<string, object>();
+                d["mode"] = Mode;
+                d["hwnd"] = h.ToInt64();
+                d["parent"] = parent.ToInt64();
+                d["parentClass"] = parent != IntPtr.Zero ? DesktopShell.ClassOf(parent) : "";
+                d["inputForwarding"] = input != null && input.Active;
+                d["t"] = DateTime.Now.ToString("s", CultureInfo.InvariantCulture);
+                Dictionary<string, object> buttons = new Dictionary<string, object>();
+                foreach (string n in new[] { "BtnScan", "BtnReport", "BtnOrganize", "BtnUndo", "BtnSkills" })
+                {
+                    Button b = Get<Button>(n);
+                    if (b == null || !b.IsVisible) { continue; }
+                    Point c = b.PointToScreen(new Point(b.ActualWidth / 2, b.ActualHeight / 2));
+                    buttons[n] = new List<object> { (int)c.X, (int)c.Y };
+                }
+                d["buttons"] = buttons;
+                System.IO.File.WriteAllText(IOPath.Combine(Paths.Root, "desktop.json"), Json.Indent(Json.Write(d)), new System.Text.UTF8Encoding(false));
+            }
+            catch (Exception) { }
         }
 
         public void SendToBottom()
         {
-            if (demo) { return; }
-            IntPtr h = new WindowInteropHelper(this).Handle;
-            if (h != IntPtr.Zero) { SetWindowPos(h, new IntPtr(1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010); }   // HWND_BOTTOM, NOSIZE|NOMOVE|NOACTIVATE
+            if (demo || Embedded) { return; }
+            DesktopShell.AttachBelow(new WindowInteropHelper(this).Handle);
+        }
+
+        /// <summary>Domanda sì/no. Da sfondo il clic l'ha ricevuto Esplora risorse: la finestra va forzata in primo piano.</summary>
+        bool Ask(string text)
+        {
+            return MessageBox.Show(text, "Tipaldi AI", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No,
+                Embedded ? MessageBoxOptions.DefaultDesktopOnly : MessageBoxOptions.None) == MessageBoxResult.Yes;
+        }
+
+        protected override void OnClosed(EventArgs e)
+        {
+            if (input != null) { input.Dispose(); input = null; }
+            base.OnClosed(e);
         }
 
         void Boot()
@@ -485,7 +620,7 @@ namespace TipaldiAI
 
         static void Launch(string path)
         {
-            try { Process.Start(new ProcessStartInfo(path) { UseShellExecute = true }); }
+            try { ShellLaunch.Open(path, null); }
             catch (Exception ex) { Events.Add("warn", "Non riesco ad aprire " + IOPath.GetFileName(path) + ": " + ex.Message); }
         }
 
@@ -637,8 +772,7 @@ namespace TipaldiAI
         {
             if (!f.Safe)
             {
-                MessageBoxResult ok = MessageBox.Show(f.Title + "\n\n" + f.Description + (f.Admin ? "\n\nServirà l'autorizzazione di amministratore." : "") + "\n\nProcedo?", "Tipaldi AI", MessageBoxButton.YesNo, MessageBoxImage.Question);
-                if (ok != MessageBoxResult.Yes) { return; }
+                if (!Ask(f.Title + "\n\n" + f.Description + (f.Admin ? "\n\nServirà l'autorizzazione di amministratore." : "") + "\n\nProcedo?")) { return; }
             }
             RunBackground(f.Title + " in corso...", () =>
             {
@@ -660,7 +794,7 @@ namespace TipaldiAI
             }
             string prompt = "Tipaldi, controlla il sistema: " + issue.Title + ". Usa gli strumenti tipaldi-ai e dimmi cosa fare.";
             try { Clipboard.SetText(prompt); } catch (Exception) { }
-            try { Process.Start(new ProcessStartInfo("claude:") { UseShellExecute = true }); } catch (Exception) { }
+            try { ShellLaunch.Open("claude:", null); } catch (Exception) { }
             Events.Add("ai", "Richiesta copiata: incollala in Claude Desktop (Ctrl+V). Claude userà gli strumenti di Tipaldi AI.");
             FillConsole();
         }
@@ -688,7 +822,7 @@ namespace TipaldiAI
                 WeeklyReport r = WeeklyReport.Build(WeeklyReport.WeekStart(DateTime.Today).AddDays(-7));
                 if (r.Stats.Total < 600) { r = WeeklyReport.Build(WeeklyReport.WeekStart(DateTime.Today)); }
                 r.Save();
-                Process.Start(new ProcessStartInfo(r.HtmlPath) { UseShellExecute = true });
+                ShellLaunch.Open(r.HtmlPath, null);
             });
         }
 
@@ -697,7 +831,7 @@ namespace TipaldiAI
             List<MovePlan> plan = Organizer.Plan("downloads", TimeSpan.FromHours(2)).Concat(Organizer.Plan("desktop", TimeSpan.FromHours(24))).ToList();
             if (plan.Count == 0) { Events.Add("info", "Niente da riordinare: Desktop e Download sono già in ordine."); FillConsole(); return; }
             string summary = string.Join("\n", plan.GroupBy(p => p.Context).Select(g => "• " + g.Key + ": " + g.Count() + " file"));
-            if (MessageBox.Show("Sistemo " + plan.Count + " file per contesto:\n\n" + summary + "\n\nPuoi annullare con ANNULLA ORDINE.", "Tipaldi AI", MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes) { return; }
+            if (!Ask("Sistemo " + plan.Count + " file per contesto:\n\n" + summary + "\n\nPuoi annullare con ANNULLA ORDINE.")) { return; }
             RunBackground("Protocollo ordine avviato...", () =>
             {
                 Organizer.Apply("downloads", TimeSpan.FromHours(2));
