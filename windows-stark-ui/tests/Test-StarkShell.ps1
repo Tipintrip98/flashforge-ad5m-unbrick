@@ -175,9 +175,15 @@ if (-not $hasShell) {
 Check $hasShell 'Desktop e barra delle applicazioni di Esplora risorse presenti'
 Start-Sleep -Seconds 3
 # le finestre del runner (console dell'agente GitHub) coprono il desktop: ridotte a icona per la prova
-foreach ($h in [ShellProbe]::TopLevel()) {
-    if ([ShellProbe]::IsWindowVisible($h) -and [ShellProbe]::Cls($h) -in 'ConsoleWindowClass', 'CabinetWClass') { [void][ShellProbe]::ShowWindow($h, 6) }
+function Hide-Windows {
+    # come Win+M, piu' le console del runner (Windows Terminal su Windows 11)
+    try { (New-Object -ComObject Shell.Application).MinimizeAll() } catch { }
+    foreach ($h in [ShellProbe]::TopLevel()) {
+        if ([ShellProbe]::IsWindowVisible($h) -and [ShellProbe]::Cls($h) -in 'ConsoleWindowClass', 'CabinetWClass', 'CASCADIA_HOSTING_WINDOW_CLASS') { [void][ShellProbe]::ShowWindow($h, 6) }
+    }
+    Start-Sleep -Milliseconds 500
 }
+Hide-Windows
 Show-ShellTree 'prima di Tipaldi AI'
 
 # 1b) studio del messaggio 0x052C: quale variante crea il livello sfondo e cosa cambia nel desktop
@@ -189,7 +195,7 @@ function Restart-Shell {
     if (-not (Get-Process explorer -ErrorAction SilentlyContinue)) { Start-Process explorer.exe }
     [void](Wait-Until { [ShellProbe]::FindWindowEx([ShellProbe]::FindWindow('Progman', [NullString]::Value), [IntPtr]::Zero, 'SHELLDLL_DefView', [NullString]::Value) -ne [IntPtr]::Zero } 30)
     Start-Sleep -Seconds 3
-    foreach ($h in [ShellProbe]::TopLevel()) { if ([ShellProbe]::IsWindowVisible($h) -and [ShellProbe]::Cls($h) -eq 'CabinetWClass') { [void][ShellProbe]::ShowWindow($h, 6) } }
+    Hide-Windows
 }
 foreach ($v in @(@(0, 0), @(0xD, 0), @(0xD, 1))) {
     Restart-Shell
@@ -256,6 +262,7 @@ try {
     Check ($taskbarLike.Count -eq 0) 'Nessuna finestra di Tipaldi AI nella barra delle applicazioni o in Alt+Tab'
 
     # le icone del desktop restano sopra: al centro dello schermo Windows vede il desktop, non Tipaldi AI
+    Hide-Windows
     $b = [Windows.Forms.Screen]::PrimaryScreen.WorkingArea
     $top = [ShellProbe]::At([int]($b.Left + $b.Width / 2), [int]($b.Top + $b.Height / 2))
     Write-Host ('  sotto il cursore al centro: ' + [ShellProbe]::Describe($top))
@@ -267,6 +274,7 @@ try {
     Check ((Get-IconsShown) -eq $iconsBefore) 'Icone del desktop visibili come prima'
 
     # 3) clic sul desktop -> pulsante del HUD (scelto dove non c'e' un'icona)
+    Hide-Windows
     $events = Join-Path $home2 'events.jsonl'
     $targets = [ordered]@{ BtnSkills = 'Aggiorno le skill di Claude'; BtnUndo = "Annullo l'ultimo riordino"; BtnScan = 'Scansione completa avviata' }
     $clicked = $null
