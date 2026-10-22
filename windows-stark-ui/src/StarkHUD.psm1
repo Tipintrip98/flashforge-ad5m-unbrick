@@ -498,7 +498,7 @@ function Test-StarkEnvironment {
         PSDesktop  = ($PSVersionTable.PSEdition -ne 'Core')
         Is64Bit    = [Environment]::Is64BitProcess
         IsAdmin    = $isAdmin
-        HasWinget  = [bool](Find-StarkWinget)
+        HasWinget  = [bool](Get-StarkWingetVersion)
     }
 }
 
@@ -719,32 +719,70 @@ function Find-StarkWinget {
     $script:WingetExe
 }
 
+function Get-StarkWingetVersion {
+    <# Versione di winget se funziona davvero (non basta che il file esista: senza licenza non parte). #>
+    $exe = Find-StarkWinget -Refresh
+    if (-not $exe) { return $null }
+    try {
+        $v = (& $exe --version 2>$null | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0 -and $v -match '^v?\d') { return $v }
+    } catch { }
+    $null
+}
+
 function Install-StarkWinget {
     <#
         Installa winget ("Programma di installazione app") quando manca, dai pacchetti ufficiali Microsoft
-        pubblicati su GitHub (firmati: Windows verifica la firma). Solo per l'utente corrente, senza amministratore.
-        Le dipendenze arrivano dallo zip ufficiale della stessa release.
+        pubblicati su GitHub (firmati: Windows verifica la firma).
+          1) per l'utente corrente, senza amministratore (Windows 10 Home/Pro);
+          2) se Windows chiede la licenza dell'app (Windows Server, alcune edizioni LTSC), la registra
+             con il file di licenza ufficiale della stessa release: una richiesta UAC.
     #>
-    if (Find-StarkWinget -Refresh) { return $true }
-    Write-StarkLog 'winget non è presente: lo installo dai pacchetti ufficiali Microsoft (circa 250 MB, solo per il tuo utente)...' 'info'
+    if (Get-StarkWingetVersion) { return $true }
+    Write-StarkLog 'winget non è presente: lo installo dai pacchetti ufficiali Microsoft (circa 250 MB)...' 'info'
     $dir = Join-Path $env:TEMP ('tipaldi-winget-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
     $web = New-Object Net.WebClient
+    $web.Headers['User-Agent'] = 'TipaldiAI-Setup'
     $arch = if ([Environment]::Is64BitOperatingSystem) { 'x64' } else { 'x86' }
+    $base = 'https://github.com/microsoft/winget-cli/releases/latest/download/'
     try {
         $deps = Join-Path $dir 'deps.zip'
-        $web.DownloadFile('https://github.com/microsoft/winget-cli/releases/latest/download/DesktopAppInstaller_Dependencies.zip', $deps)
+        $web.DownloadFile($base + 'DesktopAppInstaller_Dependencies.zip', $deps)
         Expand-Archive -LiteralPath $deps -DestinationPath (Join-Path $dir 'deps') -Force
         $appx = @(Get-ChildItem -LiteralPath (Join-Path $dir 'deps') -Recurse -Filter *.appx | Where-Object { $_.FullName -match "\\$arch\\" -or $_.Name -match "[._]$arch[._]" })
         if ($appx.Count -eq 0) { throw "dipendenze $arch non trovate nello zip di Microsoft" }
-        foreach ($a in $appx) {
-            try { Add-AppxPackage -Path $a.FullName -ErrorAction Stop }
-            catch { if ($_.Exception.Message -notmatch '0x80073D06|higher version|versione superiore') { throw } }   # gia' presente in versione piu' recente: va bene
-        }
         $bundle = Join-Path $dir 'Microsoft.DesktopAppInstaller.msixbundle'
-        $web.DownloadFile('https://github.com/microsoft/winget-cli/releases/latest/download/Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle', $bundle)
-        Add-AppxPackage -Path $bundle -ErrorAction Stop
+        $web.DownloadFile($base + 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle', $bundle)
+
+        # 1) per utente
+        try {
+            foreach ($a in $appx) {
+                try { Add-AppxPackage -Path $a.FullName -ErrorAction Stop }
+                catch { if ($_.Exception.Message -notmatch '0x80073D06|higher version|versione superiore') { throw } }   # già presente in versione più recente
+            }
+            Add-AppxPackage -Path $bundle -ErrorAction Stop
+        } catch { Write-StarkLog "Installazione per utente non riuscita ($($_.Exception.Message)): provo con la licenza." 'info' }
+        for ($i = 0; $i -lt 15 -and -not (Get-StarkWingetVersion); $i++) { Start-Sleep -Seconds 1 }
+
+        # 2) con licenza (serve amministratore)
+        if (-not (Get-StarkWingetVersion)) {
+            $rel = $web.DownloadString('https://api.github.com/repos/microsoft/winget-cli/releases/latest') | ConvertFrom-Json
+            $asset = $rel.assets | Where-Object { $_.name -like '*License1.xml' } | Select-Object -First 1
+            if (-not $asset) { throw 'file di licenza non trovato nella release di winget' }
+            $lic = Join-Path $dir $asset.name
+            $web.DownloadFile($asset.browser_download_url, $lic)
+            $depList = ($appx | ForEach-Object { "'" + $_.FullName.Replace("'", "''") + "'" }) -join ','
+            $code = Invoke-StarkElevated -Reason 'registrazione di winget con la sua licenza' -Script @"
+`$ErrorActionPreference = 'Stop'
+Add-AppxProvisionedPackage -Online -PackagePath '$($bundle.Replace("'", "''"))' -LicensePath '$($lic.Replace("'", "''"))' -DependencyPackagePath @($depList) | Out-Null
+"@
+            if ($code -ne 0) { throw "registrazione con licenza non riuscita (codice $code)" }
+            # il pacchetto "provisioned" va anche registrato per l'utente corrente
+            try { Add-AppxPackage -RegisterByFamilyName -MainPackage 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe' -ErrorAction Stop } catch { }
+            for ($i = 0; $i -lt 30 -and -not (Get-StarkWingetVersion); $i++) { Start-Sleep -Seconds 1 }
+        }
     } catch {
         Write-StarkLog "winget non installato ($($_.Exception.Message)). Installa 'Programma di installazione app' dal Microsoft Store e riprova." 'warn'
         return $false
@@ -752,13 +790,13 @@ function Install-StarkWinget {
         $web.Dispose()
         Remove-Item -LiteralPath $dir -Recurse -Force -ErrorAction SilentlyContinue
     }
-    for ($i = 0; $i -lt 30 -and -not (Find-StarkWinget -Refresh); $i++) { Start-Sleep -Seconds 1 }
-    if (-not (Find-StarkWinget)) {
-        Write-StarkLog 'winget installato ma non ancora disponibile: riavvia il PC e premi di nuovo INSTALLA.' 'warn'
+    $v = Get-StarkWingetVersion
+    if (-not $v) {
+        Write-StarkLog 'winget installato ma non ancora utilizzabile: riavvia il PC e premi di nuovo INSTALLA.' 'warn'
         return $false
     }
     $script:WingetFlags = $null
-    Write-StarkLog "winget pronto: $(& (Find-StarkWinget) --version 2>$null)" 'ok'
+    Write-StarkLog "winget pronto ($v)." 'ok'
     $true
 }
 
@@ -829,7 +867,7 @@ function Stop-StarkAppProcesses {
 function Install-StarkApp {
     <# Installa un'app con winget (solo se manca) e ricorda che l'ha installata Tipaldi AI. #>
     param([Parameter(Mandatory)][string]$Id, [Parameter(Mandatory)][string]$Name)
-    if (-not (Find-StarkWinget) -and -not (Install-StarkWinget)) {
+    if (-not (Get-StarkWingetVersion) -and -not (Install-StarkWinget)) {
         Write-StarkLog "$Name saltato: serve winget." 'warn'
         return $false
     }
@@ -1431,7 +1469,7 @@ function Install-StarkHUD {
     if ($Options.LockScreen) { $steps.Add(@{ T = 'Schermata di blocco'; A = { Set-StarkLockScreen -ImagePath (Join-Path $script:AssetRoot 'wallpapers\StarkHUD-Lock-4K.jpg') } }) }
     if ($Options.Tweaks -and @($Options.Tweaks).Count) { $steps.Add(@{ T = 'Ottimizzazioni'; A = { Invoke-StarkTweaks -Ids @($Options.Tweaks) } }) }
     $needsWinget = $Options.TranslucentTB -or $Options.Rainmeter -or $Options.Lively -or $Options.FlowLauncher -or $Options.Windhawk -or $Options.Nilesoft
-    if ($needsWinget -and -not (Find-StarkWinget -Refresh)) { $steps.Add(@{ T = 'Programma di installazione app (winget)'; A = { [void](Install-StarkWinget) } }) }
+    if ($needsWinget -and -not (Get-StarkWingetVersion)) { $steps.Add(@{ T = 'Programma di installazione app (winget)'; A = { [void](Install-StarkWinget) } }) }
     if ($Options.TranslucentTB) { $steps.Add(@{ T = 'Barra trasparente'; A = { Install-StarkTranslucentTB } }) }
     if ($Options.TaskbarX) { $steps.Add(@{ T = 'Icone centrate'; A = { Install-StarkTaskbarX } }) }
     if ($Options.ShellIcons) { $steps.Add(@{ T = 'Icone di sistema'; A = { Set-StarkShellIcons -IconDir (Join-Path $script:AssetRoot 'icons') } }) }
