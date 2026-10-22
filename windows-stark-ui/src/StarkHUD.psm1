@@ -730,6 +730,37 @@ function Get-StarkWingetVersion {
     $null
 }
 
+function Get-StarkWingetLicenseUrl {
+    <#
+        Indirizzo del file di licenza (*_License1.xml) dell'ultima release di winget. Il nome contiene un hash
+        che cambia a ogni release: prima l'API di GitHub, poi (se risponde 403 per il limite di richieste)
+        la pagina degli allegati della release, che non ha limiti.
+    #>
+    $web = New-Object Net.WebClient
+    try {
+        try {
+            $web.Headers['User-Agent'] = 'TipaldiAI-Setup'
+            $web.Headers['Accept'] = 'application/vnd.github+json'
+            $rel = $web.DownloadString('https://api.github.com/repos/microsoft/winget-cli/releases/latest') | ConvertFrom-Json
+            $asset = $rel.assets | Where-Object { $_.name -like '*License1.xml' } | Select-Object -First 1
+            if ($asset) { return [string]$asset.browser_download_url }
+        } catch { Write-StarkLog "API di GitHub non disponibile ($($_.Exception.Message)): uso la pagina della release." 'info' }
+        # l'ultima release: GitHub reindirizza /releases/latest a /releases/tag/<versione>
+        $req = [Net.HttpWebRequest]::Create('https://github.com/microsoft/winget-cli/releases/latest')
+        $req.UserAgent = 'TipaldiAI-Setup'
+        $req.AllowAutoRedirect = $false
+        $resp = $req.GetResponse()
+        try { $loc = [string]$resp.Headers['Location'] } finally { $resp.Close() }
+        if ($loc -notmatch '/tag/([^/?#]+)') { throw 'versione di winget non trovata' }
+        $tag = $Matches[1]
+        $web.Headers['User-Agent'] = 'TipaldiAI-Setup'
+        $html = $web.DownloadString("https://github.com/microsoft/winget-cli/releases/expanded_assets/$tag")
+        $m = [regex]::Match($html, '/microsoft/winget-cli/releases/download/[^"/]+/[0-9A-Za-z]+_License1\.xml')
+        if (-not $m.Success) { throw 'file di licenza non trovato nella release di winget' }
+        'https://github.com' + $m.Value
+    } finally { $web.Dispose() }
+}
+
 function Install-StarkWinget {
     <#
         Installa winget ("Programma di installazione app") quando manca, dai pacchetti ufficiali Microsoft
@@ -768,11 +799,10 @@ function Install-StarkWinget {
 
         # 2) con licenza (serve amministratore)
         if (-not (Get-StarkWingetVersion)) {
-            $rel = $web.DownloadString('https://api.github.com/repos/microsoft/winget-cli/releases/latest') | ConvertFrom-Json
-            $asset = $rel.assets | Where-Object { $_.name -like '*License1.xml' } | Select-Object -First 1
-            if (-not $asset) { throw 'file di licenza non trovato nella release di winget' }
-            $lic = Join-Path $dir $asset.name
-            $web.DownloadFile($asset.browser_download_url, $lic)
+            $licUrl = Get-StarkWingetLicenseUrl
+            $lic = Join-Path $dir ($licUrl -replace '^.*/', '')
+            $web.Headers['User-Agent'] = 'TipaldiAI-Setup'
+            $web.DownloadFile($licUrl, $lic)
             $depList = ($appx | ForEach-Object { "'" + $_.FullName.Replace("'", "''") + "'" }) -join ','
             $code = Invoke-StarkElevated -Reason 'registrazione di winget con la sua licenza' -Script @"
 `$ErrorActionPreference = 'Stop'
