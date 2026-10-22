@@ -1,61 +1,98 @@
-# Stark HUD — Windows 10 UI Pack
+# Tipaldi AI — il tuo PC in stile Stark
 
-Pack che cambia l'interfaccia di Windows 10 in stile **HUD Stark Industries**, con la pulizia di **Apple / Apple TV** e le schede arrotondate di **Xiaomi HyperOS**.
+Tipaldi AI trasforma Windows 10 in una postazione **HUD futuristica con intelligenza artificiale**:
+- un desktop animato che mostra lo stato del PC e il tuo lavoro;
+- la diagnosi continua di dischi e integrità, con riparazioni automatiche sicure;
+- un sistema che impara come lavori e ordina file e app per contesto;
+- un report settimanale;
+- skill per Claude, collegato tramite **MCP**.
+
 **Non tocca** file di sistema, servizi, driver o processi di sistema. Ogni modifica viene salvata e si annulla con un clic.
 
-![Sfondo animato con orologio, telemetria e Now Playing](docs/img/preview-live.jpg)
+![Desktop Tipaldi AI](docs/img/tipaldi-desktop.jpg)
 
-> Progetto fan-made non ufficiale, senza legami con Marvel o Disney. Non contiene loghi né materiale protetto: grafica, cursori e suoni sono originali e generati dagli script in `tools/`.
+> Progetto personale non ufficiale, senza legami con Marvel o Disney. Grafica, icone, cursori e suoni sono originali e generati dagli script in `tools/`.
 
 ---
 
 ## Installazione (3 passi)
 
-1. **Scarica** `StarkHUD-Setup.exe` dalla cartella [`W`](../W) del repository (un solo file, contiene tutto il pack).
-2. **Doppio clic** sull'exe. Se Windows mostra "Windows ha protetto il PC": **Ulteriori informazioni → Esegui comunque** (l'exe non ha una firma digitale a pagamento).
+1. **Scarica** `TipaldiAI-Setup.exe` dalla cartella [`W`](../W) del repository: un solo file con dentro tutto.
+2. **Doppio clic** sull'exe. Se Windows mostra "Windows ha protetto il PC", clicca **Ulteriori informazioni → Esegui comunque**: l'exe non ha una firma digitale, che è a pagamento.
 3. Scegli cosa attivare e premi **INSTALLA**.
-   Se compaiono richieste UAC (scaricamento delle app con winget), accettale.
 
-In alternativa: scarica questa cartella (`Code → Download ZIP`), estrai lo ZIP e fai doppio clic su `Installa.cmd`.
-
-Non servono privilegi di amministratore per il tema. Alla fine Esplora risorse si riavvia da solo per applicare barra e colori.
+Non servono privilegi di amministratore. Riavvia Claude Desktop dopo l'installazione, per vedere gli strumenti di Tipaldi AI.
 
 ## Tornare a com'era prima
 
-- Nell'installer: **Ripristina originale**.
-- Se l'installer non si apre: doppio clic su `Ripristina.cmd`.
+- Riapri l'exe e premi **Ripristina originale**.
+- In alternativa usa `TipaldiAI-Setup.exe --ripristina`.
 
-Il ripristino riporta indietro tema, colori, sfondo, schermata di blocco, cursori, suoni, font, impostazioni modificate e file sostituiti.
-Le app installate restano, a meno che tu non attivi **Rimuovi anche le app**.
+Il ripristino riporta indietro tema, colori, sfondo, icone, cursori, suoni, font e impostazioni, e toglie Tipaldi AI e il collegamento con Claude.
+**I tuoi dati restano**: attività, report e skill sono in `%LOCALAPPDATA%\TipaldiAI` e `%USERPROFILE%\.claude\skills\tipaldi-*`. Se non ti servono, eliminali a mano.
 
 ---
 
-## Cosa cambia
+## Tipaldi AI: cosa fa
+
+| Funzione | Cosa fa | Quando |
+|---|---|---|
+| **Desktop futuristico** | Reattore animato con anelli CPU/RAM, rete e disco, contesto di lavoro attuale, avvio rapido delle app che usi di più, desktop ordinato per contesto, console AI | Sempre, sotto le finestre (resta visibile con Win+D) |
+| **Diagnosi** | Salute dei dischi fisici (SSD/HDD/NVMe), previsione guasti S.M.A.R.T., settori danneggiati ed errori NTFS nel registro eventi, spazio libero, antivirus, riavvii in sospeso, memoria, app bloccate, integrità di Windows | Rapida ogni 10 minuti, completa ogni ora e a richiesta |
+| **Riparazioni sicure** | Pulizia dei file temporanei, riavvio di Esplora risorse, cache di icone e anteprime, cache DNS | **In automatico** |
+| **Riparazioni con conferma** | SFC, DISM, CHKDSK, ottimizzazione delle unità, chiusura di app bloccate, svuotamento del cestino | Solo dopo il tuo **sì** sul desktop, anche quando le chiede Claude |
+| **Claude (MCP)** | Claude Desktop e Claude Code vedono stato del PC, attività, report e skill, e possono avviare riparazioni con le regole qui sopra. Se Claude Code è installato, i problemi senza riparazione sicura gli vengono passati da soli | Usa il tuo abbonamento Claude: nessuna chiave API, nessun costo a consumo |
+| **Contesti di lavoro** | Riconosce cosa stai facendo dall'app e dal titolo della finestra: montaggio video, VFX, 3D, stampa 3D, grafica, audio, sviluppo, AI, comunicazione, documenti, svago. Le app nuove le collega da solo al contesto giusto | Ogni 5 secondi (le finestre private non vengono registrate) |
+| **Protocollo Overdrive** | Piano energetico "Prestazioni elevate" mentre monti, componi o fai 3D; rimette il tuo piano dopo | In automatico |
+| **Protocollo ordine** | Sistema Desktop e Download in cartelle per contesto (Montaggio video, Stampa 3D, Installer...) con icone dedicate. Si annulla con **ANNULLA ORDINE** | Una volta al giorno, quando sei via |
+| **Report settimanale** | Ore per contesto, app e progetti più usati, mappa degli orari, cosa ha imparato l'AI, salute del PC, suggerimenti | Ogni lunedì (pulsante **REPORT SETTIMANALE**) |
+| **Skill per Claude** | Trasforma quello che ha imparato in skill (`~/.claude/skills/tipaldi-*`) e in zip da caricare su claude.ai | Ogni settimana, oppure con **AGGIORNA SKILL DI CLAUDE** |
+| **Icone** | Set esagonale luminoso per i contesti e per Questo PC, Cestino, Rete e cartella utente | All'installazione (si ripristinano) |
+
+![Icone Tipaldi AI](docs/img/icons-preview.png)
+
+### Usarlo con Claude
+
+Dopo l'installazione apri Claude Desktop e scrivi, per esempio:
+- "Tipaldi, controlla il sistema e sistema quello che puoi."
+- "Su cosa ho lavorato questa settimana?"
+- "Aggiorna la skill del mio montaggio video con quello che hai visto."
+
+Gli strumenti MCP sono 15. I principali: `system_status`, `run_health_check`, `apply_fix`, `activity_summary`, `activity_timeline`, `weekly_report`, `organize_apply`, `skill_write`.
+
+### Impostazioni
+
+Sono in `%LOCALAPPDATA%\TipaldiAI\settings.json`. Si possono spegnere una per una:
+- registrazione dell'attività e dei titoli delle finestre;
+- riparazioni automatiche e passaggio dei problemi a Claude;
+- Overdrive;
+- riordino di Desktop e Download;
+- report e skill;
+- desktop.
+
+Il menu dell'icona vicino all'orologio permette di nascondere il desktop, avviare una scansione, aprire il report o uscire.
+
+---
+
+## Il tema (cosa cambia in Windows)
 
 | Parte di Windows | Cosa diventa | Come |
 |---|---|---|
-| Colori e modalità | Scuro, accento ciano reattore, tavolozza con oro Stark, trasparenze | Registro utente + API di sistema (crea anche il tema "Stark HUD" in Impostazioni → Temi) |
+| Colori e modalità | Scuro, accento ciano reattore, tavolozza con oro, trasparenze | Registro utente + API di sistema |
 | Sfondo | "Arc Reactor" 4K (versione ultrawide inclusa) | Nativo |
 | Schermata di blocco e accesso | Reattore centrato | API Windows (WinRT) |
 | Puntatori | 17 cursori vettoriali multi-risoluzione, attesa animata | Schema cursori nativo |
 | Suoni | Notifiche "vetro", errori morbidi, cestino "dissolvenza", power-up all'accesso | Schema suoni nativo |
 | Font | Rajdhani + Share Tech Mono (licenza OFL) | Solo per il tuo utente |
-| Sfondo animato | Anelli che ruotano, telemetria CPU/RAM/GPU/rete, Now Playing | [Lively Wallpaper](https://github.com/rocksdanister/lively) |
-| Widget desktop | Orologio stile Apple TV, meteo, anelli stile Apple Watch, control center stile HyperOS | [Rainmeter](https://github.com/rainmeter/rainmeter) |
 | Ricerca | Barra stile Spotlight con `Alt+Spazio` | [Flow Launcher](https://github.com/Flow-Launcher/Flow.Launcher) |
 | Barra delle applicazioni | Trasparente sul desktop, acrilico con finestre aperte | [TranslucentTB](https://github.com/TranslucentTB/TranslucentTB) |
-| Icone della barra (opzionale) | Centrate stile dock | [TaskbarX](https://github.com/ChrisAnd1998/TaskbarX) |
-| Menu tasto destro (opzionale) | Acrilico scuro con accenti ciano | [Nilesoft Shell](https://github.com/moudey/Shell) |
-
-![Sfondo statico 4K](docs/img/preview-desktop.jpg)
-
-![Cursori su sfondo scuro e chiaro](docs/img/cursors-preview.png)
+| Opzionali | Icone centrate (TaskbarX), menu tasto destro (Nilesoft Shell), sfondo animato (Lively), widget classici (Rainmeter) | Spenti di default |
 
 ## Tre livelli di sicurezza
 
 | Livello | Cosa include | Tocca processi di sistema? |
 |---|---|---|
-| **1 — Nativo** | Tema, colori, sfondo, blocco schermo, cursori, suoni, font, ottimizzazioni | No. Solo impostazioni dell'utente (HKCU) |
+| **1 — Nativo** | Tipaldi AI, tema, colori, sfondo, icone, blocco schermo, cursori, suoni, font, ottimizzazioni | No. Solo impostazioni e cartelle dell'utente (HKCU, %LOCALAPPDATA%). SFC/DISM/CHKDSK solo con la tua conferma e l'UAC |
 | **2 — Overlay** | Lively, Rainmeter, Flow Launcher, TranslucentTB, TaskbarX | No. App separate, open source, senza iniezioni |
 | **3 — Avanzato** (spento di default) | Nilesoft Shell, Windhawk | Si agganciano a Esplora risorse (non a componenti critici). Facoltativo |
 
@@ -112,7 +149,7 @@ powershell -ExecutionPolicy Bypass -File .\StarkUI.ps1 -Restore -RemoveApps -Yes
 | Il colore della barra non cambia | Disconnettiti e rientra (o riavvia Esplora risorse dal Task Manager). |
 | Lo sfondo animato non parte | Apri Lively e scegli "Stark HUD - Arc Reactor" dalla libreria. |
 | Il meteo dice "in aggiornamento..." | Controlla la connessione; il meteo si aggiorna ogni 30 minuti da wttr.in. |
-| Il punto di ripristino non viene creato | Protezione sistema è disattivata, oppure ne esiste già uno delle ultime 24 ore. Il backup Stark HUD funziona comunque. |
+| Il punto di ripristino non viene creato | Protezione sistema è disattivata, oppure ne esiste già uno delle ultime 24 ore. Il backup di Tipaldi AI funziona comunque. |
 
 Dove sono i file:
 
@@ -132,7 +169,8 @@ windows-stark-ui/
 ├── config/tweaks.json              catalogo ottimizzazioni (solo HKCU)
 ├── theme/                          sfondi, cursori, suoni, font
 ├── components/                     Lively, Rainmeter, Flow Launcher, TranslucentTB, Nilesoft
-├── tools/                          generatori degli asset e Build-Setup.ps1 (crea ../W/StarkHUD-Setup.exe)
+├── agent/                          app Tipaldi AI (C#): desktop, diagnosi, riparazioni, attività, report, skill, MCP
+├── tools/                          generatori degli asset (build-icons.js per le icone) e Build-Setup.ps1 (crea ../W/TipaldiAI-Setup.exe)
 ├── tests/Test-StarkCore.ps1        test delle funzioni pure
 └── docs/                           ricerca e immagini
 ```
@@ -149,7 +187,7 @@ Test:
 
 - Funzioni pure: `powershell -ExecutionPolicy Bypass -File tests\Test-StarkCore.ps1`. Funziona anche con `pwsh` su Linux e macOS.
 - Test completo su Windows (**modifica davvero il sistema**: solo su VM o Windows Sandbox): `powershell -ExecutionPolicy Bypass -STA -File tests\Test-StarkWindows.ps1 [-Components]`.
-- Su GitHub, solo ad avvio manuale (Actions → "Stark HUD - test Windows" → Run workflow): `.github/workflows/stark-hud-windows.yml`. Ricostruisce anche `W/StarkHUD-Setup.exe` se il pack è cambiato.
+- Su GitHub, solo ad avvio manuale (Actions → "Tipaldi AI - test Windows" → Run workflow): `.github/workflows/stark-hud-windows.yml`. Ricostruisce anche `W/TipaldiAI-Setup.exe` se il pack è cambiato.
 
 **Cosa è stato verificato e cosa no:**
 
