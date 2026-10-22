@@ -128,7 +128,25 @@ if (-not (Wait-Until { [ShellProbe]::FindWindow('Progman', $null) -ne [IntPtr]::
     Write-Host 'Esplora risorse non attivo: lo avvio come shell.'
     Start-Process explorer.exe
 }
-$hasShell = Wait-Until { [ShellProbe]::FindWindow('Progman', $null) -ne [IntPtr]::Zero -and [ShellProbe]::FindWindow('Shell_TrayWnd', $null) -ne [IntPtr]::Zero } 40
+$shellReady = { [ShellProbe]::FindWindow('Progman', $null) -ne [IntPtr]::Zero -and [ShellProbe]::FindWindow('Shell_TrayWnd', $null) -ne [IntPtr]::Zero }
+$hasShell = Wait-Until $shellReady 20
+if (-not $hasShell) {
+    # explorer.exe diventa la shell (desktop + barra) solo se Winlogon lo indica come shell; altrimenti apre una cartella
+    $wl = 'Software\Microsoft\Windows NT\CurrentVersion\Winlogon'
+    $hklm = (Get-ItemProperty -Path "HKLM:\$wl" -Name Shell -ErrorAction SilentlyContinue).Shell
+    $hkcu = (Get-ItemProperty -Path "HKCU:\$wl" -Name Shell -ErrorAction SilentlyContinue).Shell
+    Write-Host "Shell di Winlogon: HKLM='$hklm' HKCU='$hkcu'"
+    foreach ($h in [ShellProbe]::TopLevel()) { if ([ShellProbe]::Pid($h) -in @(Get-Process explorer -ErrorAction SilentlyContinue).Id -and [ShellProbe]::IsWindowVisible($h)) { Write-Host ('  finestra di explorer: ' + [ShellProbe]::Describe($h)) } }
+    if ($env:GITHUB_ACTIONS -and $hklm -notmatch '^explorer(\.exe)?$') {
+        Write-Host 'Runner usa e getta: imposto explorer.exe come shell dell''utente e lo riavvio.'
+        New-Item -Path "HKCU:\$wl" -Force | Out-Null
+        Set-ItemProperty -Path "HKCU:\$wl" -Name Shell -Value 'explorer.exe'
+    }
+    Get-Process explorer -ErrorAction SilentlyContinue | Stop-Process -Force
+    Start-Sleep -Seconds 2
+    Start-Process explorer.exe
+    $hasShell = Wait-Until $shellReady 40
+}
 if (-not $hasShell) {
     # sessione senza desktop interattivo (es. servizio nella sessione 0): il chiamante puo' riprovare nella sessione utente
     Write-Host ("Nessun desktop di Esplora risorse in questa sessione (sessione {0})." -f (Get-Process -Id $PID).SessionId)
