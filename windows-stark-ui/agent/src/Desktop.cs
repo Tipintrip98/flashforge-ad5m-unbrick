@@ -39,11 +39,18 @@ namespace TipaldiAI
             Action ensure = () =>
             {
                 if (!wanted) { return; }
+                if (hud != null && hud.IsDead)
+                {
+                    // Esplora risorse chiuso: il livello sfondo sparisce e con lui la finestra figlia
+                    DesktopLog.Write("finestra del desktop distrutta da Esplora risorse: la ricreo");
+                    HudWindow dead = hud;
+                    hud = null;
+                    try { dead.Close(); } catch (Exception) { }
+                }
                 if (hud == null)
                 {
-                    // prima apertura, o Esplora risorse riavviato: il livello sfondo sparisce e con lui la finestra figlia
                     HudWindow w = new HudWindow(agent, false);
-                    w.Closed += (s, e) => { if (hud == w) { hud = null; } };
+                    w.Closed += (s, e) => { if (hud == w) { hud = null; DesktopLog.Write("finestra del desktop chiusa"); } };
                     hud = w;
                     w.Show();
                 }
@@ -53,7 +60,11 @@ namespace TipaldiAI
             DispatcherTimer watch = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
             watch.Tick += (s, e) => ensure();
             watch.Start();
-            TaskbarWatcher.Start(() => { if (hud != null) { hud.Reattach(); } else { ensure(); } });
+            TaskbarWatcher.Start(() =>
+            {
+                DesktopLog.Write("Esplora risorse riavviato (TaskbarCreated)");
+                if (hud != null && !hud.IsDead) { hud.Reattach(); } else { ensure(); }
+            });
 
             Forms.NotifyIcon tray = new Forms.NotifyIcon();
             try { tray.Icon = System.Drawing.Icon.ExtractAssociatedIcon(Paths.ExePath); } catch (Exception) { tray.Icon = System.Drawing.SystemIcons.Application; }
@@ -283,7 +294,7 @@ namespace TipaldiAI
             IntPtr h = new WindowInteropHelper(this).Handle;
             if (h == IntPtr.Zero) { return; }
             IntPtr l = DesktopShell.FindWallpaperLayer();
-            DesktopShell.RECT wa = DesktopShell.WorkArea();
+            DesktopShell.RECT wa = HudArea();
             string before = Mode;
             if (l != IntPtr.Zero && DesktopShell.Embed(h, l, wa))
             {
@@ -300,19 +311,45 @@ namespace TipaldiAI
                 DesktopShell.AttachBelow(h);
                 if (before != Mode) { Events.Add("warn", "Livello sfondo di Windows non disponibile: desktop come finestra sotto tutte le altre."); }
             }
+            DesktopLog.Write(string.Format("aggancio: modalita' {0}, finestra 0x{1:X}, livello 0x{2:X}, area {3},{4}-{5},{6}",
+                Mode, h.ToInt64(), l.ToInt64(), wa.Left, wa.Top, wa.Right, wa.Bottom));
             Dispatcher.BeginInvoke(new Action(WriteShellState), DispatcherPriority.ApplicationIdle);
         }
 
-        /// <summary>Ogni pochi secondi: riaggancia dopo un riavvio di Esplora risorse, un cambio di sfondo o di risoluzione.</summary>
+        /// <summary>Area di lavoro meno le colonne delle icone vere del desktop: il HUD non finisce sotto le icone.</summary>
+        static DesktopShell.RECT HudArea()
+        {
+            DesktopShell.RECT wa = DesktopShell.WorkArea();
+            wa.Left += DesktopShell.IconColumnsWidth(wa);
+            return wa;
+        }
+
+        /// <summary>True quando la finestra è stata distrutta da fuori (es. Esplora risorse chiuso col livello sfondo).</summary>
+        public bool IsDead
+        {
+            get
+            {
+                if (demo) { return false; }
+                IntPtr h = new WindowInteropHelper(this).Handle;
+                return h == IntPtr.Zero || !DesktopShell.IsAlive(h);
+            }
+        }
+
+        /// <summary>Ogni pochi secondi: riaggancia dopo un riavvio di Esplora risorse, un cambio di sfondo, di risoluzione o di icone.</summary>
         public void Watch()
         {
-            if (demo || !IsVisible) { return; }
+            if (demo || IsDead) { return; }
             IntPtr h = new WindowInteropHelper(this).Handle;
             if (layer != IntPtr.Zero)
             {
-                DesktopShell.RECT wa = DesktopShell.WorkArea();
+                DesktopShell.RECT wa = HudArea();
                 bool moved = wa.Left != placed.Left || wa.Top != placed.Top || wa.Right != placed.Right || wa.Bottom != placed.Bottom;
-                if (!DesktopShell.IsShown(layer) || DesktopShell.ParentOf(h) != layer || moved) { Reattach(); }
+                bool lost = !DesktopShell.IsShown(layer) || DesktopShell.ParentOf(h) != layer;
+                if (lost || moved)
+                {
+                    DesktopLog.Write(lost ? "livello sfondo perso: riaggancio" : "area cambiata (risoluzione, barra o icone): riposiziono");
+                    Reattach();
+                }
             }
             else if (++retry % 10 == 0) { Reattach(); }
         }
@@ -330,6 +367,8 @@ namespace TipaldiAI
                 d["parent"] = parent.ToInt64();
                 d["parentClass"] = parent != IntPtr.Zero ? DesktopShell.ClassOf(parent) : "";
                 d["inputForwarding"] = input != null && input.Active;
+                d["mousePresses"] = input != null ? input.Presses : 0;
+                d["iconColumns"] = placed.Left - DesktopShell.WorkArea().Left;
                 d["t"] = DateTime.Now.ToString("s", CultureInfo.InvariantCulture);
                 Dictionary<string, object> buttons = new Dictionary<string, object>();
                 foreach (string n in new[] { "BtnScan", "BtnReport", "BtnOrganize", "BtnUndo", "BtnSkills" })

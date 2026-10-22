@@ -309,6 +309,9 @@ finally {
     Check $agent.HasExited 'Tipaldi AI chiuso con --stop'
     $err = Join-Path $home2 'logs\errori.log'
     if (Test-Path $err) { Write-Host '--- errori.log'; Get-Content $err | Write-Host }
+    $dlog = Join-Path $home2 'logs\desktop.log'
+    if (Test-Path $dlog) { Write-Host '--- desktop.log'; Get-Content $dlog | Write-Host }
+    if (Test-Path $stateFile) { Write-Host '--- desktop.json'; Get-Content $stateFile | Write-Host }
     Write-Host '--- console di Tipaldi AI'
     if (Test-Path (Join-Path $home2 'events.jsonl')) { Get-Content (Join-Path $home2 'events.jsonl') -Encoding UTF8 | Select-Object -Last 15 | Write-Host }
 }

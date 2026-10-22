@@ -33,6 +33,26 @@ using System.Windows.Threading;
 
 namespace TipaldiAI
 {
+    /// <summary>Diario dell'integrazione col desktop (logs\desktop.log): agganci, riavvii di Esplora risorse, clic.</summary>
+    public static class DesktopLog
+    {
+        static readonly object Gate = new object();
+
+        public static void Write(string text)
+        {
+            lock (Gate)
+            {
+                try
+                {
+                    string f = System.IO.Path.Combine(Paths.Logs, "desktop.log");
+                    if (System.IO.File.Exists(f) && new System.IO.FileInfo(f).Length > 256 * 1024) { System.IO.File.Delete(f); }
+                    System.IO.File.AppendAllText(f, DateTime.Now.ToString("HH:mm:ss.fff") + " " + text + Environment.NewLine);
+                }
+                catch (Exception) { }
+            }
+        }
+    }
+
     public static class DesktopShell
     {
         delegate bool EnumProc(IntPtr h, IntPtr l);
@@ -128,6 +148,28 @@ namespace TipaldiAI
             return view;
         }
 
+        [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint msg, IntPtr w, IntPtr l);
+
+        /// <summary>
+        /// Larghezza in pixel delle colonne occupate dalle icone vere del desktop (0 se nascoste), così il HUD
+        /// non ci finisce sotto. Solo messaggi senza puntatori (nessuna memoria scritta in explorer.exe):
+        /// LVM_GETITEMCOUNT e LVM_GETITEMSPACING.
+        /// </summary>
+        public static int IconColumnsWidth(RECT area)
+        {
+            IntPtr view = FindDesktopView();
+            IntPtr list = view != IntPtr.Zero ? FindWindowEx(view, IntPtr.Zero, "SysListView32", null) : IntPtr.Zero;
+            if (list == IntPtr.Zero || !IsWindowVisible(list)) { return 0; }
+            int count = SendMessage(list, 0x1004, IntPtr.Zero, IntPtr.Zero).ToInt32();   // LVM_GETITEMCOUNT
+            if (count <= 0) { return 0; }
+            int spacing = SendMessage(list, 0x1033, IntPtr.Zero, IntPtr.Zero).ToInt32();  // LVM_GETITEMSPACING (icone grandi)
+            int cx = spacing & 0xFFFF, cy = (spacing >> 16) & 0xFFFF;
+            if (cx <= 0 || cy <= 0) { return 0; }
+            int rows = Math.Max(1, (area.Bottom - area.Top) / cy);
+            int cols = (count + rows - 1) / rows;
+            return Math.Min((area.Right - area.Left) / 3, cols * cx + 8);
+        }
+
         /// <summary>Area di lavoro del monitor principale in pixel fisici (schermo meno barra delle applicazioni).</summary>
         public static RECT WorkArea()
         {
@@ -221,6 +263,9 @@ namespace TipaldiAI
         readonly DispatcherTimer hoverTimer;
         POINT lastMove;
         bool moved;
+        int downs;
+
+        public int Presses { get { return downs; } }
 
         public DesktopInput(HwndSource host)
         {
@@ -241,7 +286,7 @@ namespace TipaldiAI
                 MSLLHOOKSTRUCT m = (MSLLHOOKSTRUCT)Marshal.PtrToStructure(l, typeof(MSLLHOOKSTRUCT));
                 int msg = w.ToInt32();
                 if (msg == WM_MOUSEMOVE) { lastMove = m.pt; moved = true; }
-                else if (msg == WM_LBUTTONDOWN) { down = m.pt; pressed = true; }
+                else if (msg == WM_LBUTTONDOWN) { down = m.pt; pressed = true; downs++; }
                 else if (msg == WM_LBUTTONUP && pressed)
                 {
                     pressed = false;
@@ -255,19 +300,24 @@ namespace TipaldiAI
             return CallNextHookEx(hook, code, w, l);
         }
 
-        ButtonBase ButtonAt(POINT p)
+        ButtonBase ButtonAt(POINT p) { string why; return ButtonAt(p, out why); }
+
+        ButtonBase ButtonAt(POINT p, out string why)
         {
-            if (host.IsDisposed || host.RootVisual == null) { return null; }
-            if (!DesktopShell.IsDesktopSurface(WindowFromPoint(p))) { return null; }
+            why = "";
+            if (host.IsDisposed || host.RootVisual == null) { why = "finestra chiusa"; return null; }
+            if (!DesktopShell.IsDesktopSurface(WindowFromPoint(p))) { why = "non sul desktop"; return null; }
             UIElement top = host.RootVisual as UIElement;
-            if (top == null) { return null; }
+            if (top == null) { why = "radice assente"; return null; }
             Point local;
-            try { local = top.PointFromScreen(new Point(p.X, p.Y)); } catch (InvalidOperationException) { return null; }
+            try { local = top.PointFromScreen(new Point(p.X, p.Y)); } catch (InvalidOperationException ex) { why = ex.Message; return null; }
             HitTestResult hit = VisualTreeHelper.HitTest(top, local);
             DependencyObject d = hit != null ? hit.VisualHit : null;
+            why = string.Format("punto HUD {0:0},{1:0}, colpito {2}", local.X, local.Y, d != null ? d.GetType().Name : "niente");
             while (d != null && !(d is ButtonBase)) { d = VisualTreeHelper.GetParent(d); }
             ButtonBase b = d as ButtonBase;
-            return b != null && b.IsEnabled && b.IsVisible ? b : null;
+            if (b != null && !(b.IsEnabled && b.IsVisible)) { why += ", pulsante non attivo"; return null; }
+            return b;
         }
 
         static bool OnDesktopIcon(POINT p)
@@ -283,8 +333,13 @@ namespace TipaldiAI
 
         void Click(POINT p)
         {
-            ButtonBase b = ButtonAt(p);
-            if (b == null || OnDesktopIcon(p)) { return; }
+            IntPtr under = WindowFromPoint(p);
+            string why;
+            ButtonBase b = ButtonAt(p, out why);
+            bool icon = b != null && OnDesktopIcon(p);
+            DesktopLog.Write(string.Format("clic {0},{1} su {2} ({3}): pulsante {4}{5}", p.X, p.Y, DesktopShell.ClassOf(under), why,
+                b != null ? (b.Name != "" ? b.Name : "senza nome") : "nessuno", icon ? " (coperto da un'icona: lasciato al desktop)" : ""));
+            if (b == null || icon) { return; }
             AutomationPeer peer = UIElementAutomationPeer.CreatePeerForElement(b);
             IInvokeProvider inv = peer != null ? peer.GetPattern(PatternInterface.Invoke) as IInvokeProvider : null;
             if (inv != null) { inv.Invoke(); }
